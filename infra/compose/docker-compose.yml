@@ -4,6 +4,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    depends_on:
+      - backend
     ports:
       - "80:80"
       - "443:443"
@@ -15,6 +17,17 @@ services:
       - ../../frontend/dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  backend:
+    build:
+      context: ../../backend
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      PULSE_ENV: ${PULSE_ENV:-prod}
+    # expose, not ports: backend reachable only via Caddy on the docker network
+    expose:
+      - "8000"
 
 volumes:
   caddy_data:

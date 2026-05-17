@@ -7,10 +7,10 @@
 	encode gzip zstd
 	root * /srv
 
-	# Backend появится в Sprint 2. ВАЖНО: handle до try_files,
+	# Backend на docker network. ВАЖНО: handle до try_files,
 	# иначе SPA-fallback перехватит /api/* и отдаст index.html.
 	handle /api/* {
-		respond "Backend not wired up yet (Sprint 2)" 503
+		reverse_proxy backend:8000
 	}
 
 	# SPA: статика по пути, иначе index.html
