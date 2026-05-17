@@ -1,0 +1,21 @@
+# Pulse Field Drill — Caddy config
+#
+# PUBLIC_DOMAIN не задан  → слушаем :80 (HTTP-only, для локалки)
+# PUBLIC_DOMAIN задан     → автоматический HTTPS через ACME
+
+{$PUBLIC_DOMAIN} {
+	encode gzip zstd
+	root * /srv
+
+	# Backend появится в Sprint 2. ВАЖНО: handle до try_files,
+	# иначе SPA-fallback перехватит /api/* и отдаст index.html.
+	handle /api/* {
+		respond "Backend not wired up yet (Sprint 2)" 503
+	}
+
+	# SPA: статика по пути, иначе index.html
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
