@@ -7,13 +7,20 @@
 	encode gzip zstd
 	root * /srv
 
-	# Backend на docker network. ВАЖНО: handle до try_files,
-	# иначе SPA-fallback перехватит /api/* и отдаст index.html.
+	# Backend на docker network. ВАЖНО: handle до SPA-fallback.
 	handle /api/* {
 		reverse_proxy backend:8000
 	}
 
-	# SPA: статика по пути, иначе index.html
+	# Hashed assets — строгий file_server, БЕЗ SPA-fallback.
+	# Иначе запрос на устаревший /assets/index-XXXXX.js возвращает
+	# index.html (200) → Telegram-WebView парсит HTML как JS → тихо падает,
+	# Mini App висит на splash.
+	handle /assets/* {
+		file_server
+	}
+
+	# SPA routes: для всего остального — статика по пути, иначе index.html.
 	handle {
 		try_files {path} /index.html
 		file_server
