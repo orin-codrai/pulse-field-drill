@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { initData, useSignal } from '@telegram-apps/sdk-react';
+import { initData, useSignal } from '@tma.js/sdk-react';
 
 import { ApiError, apiFetch } from '@/lib/api';
 
