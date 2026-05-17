@@ -5,7 +5,9 @@ from app.config import settings
 from app.schemas.user import TelegramUser
 
 
-def current_user(authorization: str = Header(...)) -> TelegramUser:
+def current_user(authorization: str | None = Header(None)) -> TelegramUser:
+    if not authorization:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing auth")
     scheme, _, raw = authorization.partition(" ")
     if scheme.lower() != "tma" or not raw:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad auth scheme")
