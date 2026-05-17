@@ -3,7 +3,7 @@ import {
   initData,
   type User,
   useSignal,
-} from '@tma.js/sdk-react';
+} from '@telegram-apps/sdk-react';
 import { List, Placeholder } from '@telegram-apps/telegram-ui';
 
 import { DisplayData, type DisplayDataRow } from '@/components/DisplayData/DisplayData.tsx';

@@ -10,7 +10,7 @@ import {
   emitEvent,
   miniApp,
   backButton,
-} from '@tma.js/sdk-react';
+} from '@telegram-apps/sdk-react';
 
 /**
  * Initializes the application and configures its dependencies.

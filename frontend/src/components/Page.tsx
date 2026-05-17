@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { backButton } from '@tma.js/sdk-react';
+import { backButton } from '@telegram-apps/sdk-react';
 import { type PropsWithChildren, useEffect } from 'react';
 
 export function Page({ children, back = true }: PropsWithChildren<{
