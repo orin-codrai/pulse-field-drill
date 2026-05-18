@@ -235,6 +235,36 @@ async def test_post_with_archived_account_returns_422(
     assert r.status_code == 422
 
 
+async def test_post_with_archived_category_returns_422(
+    app_client: AsyncClient, auth_header, user_setup
+):
+    """Зеркало для archived-account guard, но на category. Создаём свою
+    expense-категорию (системную архивировать нельзя через PATCH/403),
+    архивируем её, потом пробуем создать транзакцию с ней."""
+    new = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Хобби-tx", "kind": "expense"},
+    )
+    cid = new.json()["id"]
+    await app_client.patch(
+        f"/api/categories/{cid}",
+        headers=auth_header,
+        json={"archived_at": "2026-05-01T00:00:00Z"},
+    )
+    r = await app_client.post(
+        "/api/transactions",
+        headers=auth_header,
+        json={
+            "kind": "expense",
+            "amount_minor": 100,
+            "from_account_id": user_setup["card_id"],
+            "category_id": cid,
+        },
+    )
+    assert r.status_code == 422
+
+
 # ─── GET list + filter ────────────────────────────────────────────────────────
 
 

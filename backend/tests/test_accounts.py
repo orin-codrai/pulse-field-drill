@@ -11,7 +11,6 @@
 - Cross-resource: user B → GET/PATCH ресурса user A → 404.
 """
 
-import pytest
 from httpx import AsyncClient
 
 from tests.conftest import sign_init_data
@@ -99,6 +98,27 @@ async def test_patch_updates_name_and_icon(
     assert r.status_code == 200
     assert r.json()["name"] == "Карта Сбер"
     assert r.json()["icon"] == "🟢"
+
+
+async def test_patch_with_immutable_field_rejected_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """type и initial_balance_minor — иммутабельные поля. PATCH с ними
+    должен вернуть 422 (extra='forbid' в AccountUpdate schema)."""
+    accounts = (await app_client.get("/api/accounts", headers=auth_header)).json()
+    aid = accounts[0]["id"]
+    r1 = await app_client.patch(
+        f"/api/accounts/{aid}",
+        headers=auth_header,
+        json={"type": "savings"},
+    )
+    assert r1.status_code == 422
+    r2 = await app_client.patch(
+        f"/api/accounts/{aid}",
+        headers=auth_header,
+        json={"initial_balance_minor": 999999},
+    )
+    assert r2.status_code == 422
 
 
 async def test_patch_archive_then_unarchive(

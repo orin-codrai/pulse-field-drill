@@ -67,21 +67,51 @@ async def test_post_duplicate_name_in_user_namespace_returns_409(
     assert r.status_code == 409
 
 
-async def test_post_with_same_name_as_system_is_409(
+async def test_post_with_same_name_as_system_is_allowed(
     app_client: AsyncClient, provisioned_user, auth_header
 ):
-    """COALESCE(user_id, 0) превращает все системные в namespace=0, юзера
-    в namespace=user_id. Имя 'Зарплата' уже у системного → ... wait,
-    COALESCE отделяет namespaces. Системное user_id=NULL→0, юзер id≠0,
-    значит разные namespaces — должно быть 201. Проверим что именно так.
-    """
+    """COALESCE(user_id, 0) отделяет namespaces: системное → 0, юзер → user.id.
+    Юзер вправе создать свою «Зарплату» одновременно с системной."""
     r = await app_client.post(
         "/api/categories",
         headers=auth_header,
         json={"name": "Зарплата", "kind": "income"},
     )
-    # Юзер имеет право создать свою «Зарплату» — namespaces разные.
     assert r.status_code == 201, r.text
+
+
+async def test_post_extra_field_rejected_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """Mass-assignment regression: схема CategoryCreate с extra='forbid'.
+    user_id/is_system/archived_at не должны приниматься в POST body —
+    юзер не должен мочь хитростью создать категорию для другого user_id
+    или объявить себя системной."""
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "X", "kind": "expense", "user_id": 999},
+    )
+    assert r.status_code == 422
+
+
+async def test_patch_extra_field_rejected_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """PATCH whitelist: name/icon/archived_at. kind/user_id не принимаются —
+    нельзя перевернуть expense в income или передать категорию другому."""
+    new = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Хобби-2", "kind": "expense"},
+    )
+    cid = new.json()["id"]
+    r = await app_client.patch(
+        f"/api/categories/{cid}",
+        headers=auth_header,
+        json={"kind": "income"},
+    )
+    assert r.status_code == 422
 
 
 async def test_post_invalid_kind_422(

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,7 +176,7 @@ async def delete_transaction(
     tx_id: int,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
-) -> Response:
+) -> None:
     tx = await session.scalar(
         select(Transaction).where(
             Transaction.id == tx_id, Transaction.user_id == user.id
@@ -186,4 +186,3 @@ async def delete_transaction(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "transaction not found")
     await session.delete(tx)
     await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
