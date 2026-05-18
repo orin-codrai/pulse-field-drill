@@ -43,3 +43,12 @@ class AccountOut(BaseModel):
     icon: str | None
     archived_at: datetime | None
     created_at: datetime
+
+
+class AccountBalanceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: int
+    name: str
+    type: str
+    balance_minor: int

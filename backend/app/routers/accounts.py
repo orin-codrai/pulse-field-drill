@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import current_user
 from app.db.session import get_session
 from app.models import Account, User
-from app.schemas.account import AccountCreate, AccountOut, AccountUpdate
+from app.schemas.account import (
+    AccountBalanceOut,
+    AccountCreate,
+    AccountOut,
+    AccountUpdate,
+)
+from app.services.balances import all_balances
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -18,6 +24,15 @@ async def list_accounts(
 ) -> list[Account]:
     stmt = select(Account).where(Account.user_id == user.id).order_by(Account.id)
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.get("/balances", response_model=list[AccountBalanceOut])
+async def get_balances(
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Derived балансы всех accounts юзера, один SQL. См. ADR-0004."""
+    return await all_balances(session, user.id)
 
 
 @router.post("", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
