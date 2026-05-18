@@ -8,9 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.config import settings
 from app.db.base import Base
-
-# import app.models  — добавляется в Step 5, как только появятся модели.
-# Без этого autogenerate выдаст пустую миграцию (Base.metadata будет пустой).
+import app.models  # noqa: F401  — регистрирует все таблицы на Base.metadata.
 
 config = context.config
 

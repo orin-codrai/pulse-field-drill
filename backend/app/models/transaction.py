@@ -1,0 +1,93 @@
+from datetime import datetime
+
+from sqlalchemy import (
+    CHAR,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    Integer,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        CHAR(3), nullable=False, server_default="RUB"
+    )
+    from_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="RESTRICT")
+    )
+    to_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="RESTRICT")
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("categories.id", ondelete="RESTRICT")
+    )
+    receipt_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("receipts.id")
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('expense','income','transfer','adjustment')",
+            name="transactions_kind_chk",
+        ),
+        CheckConstraint("amount_minor > 0", name="transactions_amount_chk"),
+        CheckConstraint("currency = 'RUB'", name="transactions_currency_chk"),
+        # XOR-логика kind ↔ FK. Adjustment имеет ровно один из from/to (не оба).
+        CheckConstraint(
+            """
+            (kind='expense'    AND from_account_id IS NOT NULL AND to_account_id IS NULL     AND category_id IS NOT NULL) OR
+            (kind='income'     AND from_account_id IS NULL     AND to_account_id IS NOT NULL AND category_id IS NOT NULL) OR
+            (kind='transfer'   AND from_account_id IS NOT NULL AND to_account_id IS NOT NULL AND from_account_id <> to_account_id AND category_id IS NULL) OR
+            (kind='adjustment'
+               AND ( (from_account_id IS NOT NULL AND to_account_id IS NULL)
+                  OR (from_account_id IS NULL     AND to_account_id IS NOT NULL) )
+               AND category_id IS NOT NULL)
+            """,
+            name="transactions_kind_fields_chk",
+        ),
+        Index(
+            "transactions_user_occurred_idx",
+            "user_id",
+            "occurred_at",
+            postgresql_using="btree",
+        ),
+        Index(
+            "transactions_from_acc_idx",
+            "from_account_id",
+            postgresql_where="from_account_id IS NOT NULL",
+        ),
+        Index(
+            "transactions_to_acc_idx",
+            "to_account_id",
+            postgresql_where="to_account_id IS NOT NULL",
+        ),
+        Index(
+            "transactions_receipt_idx",
+            "receipt_id",
+            postgresql_where="receipt_id IS NOT NULL",
+        ),
+    )
