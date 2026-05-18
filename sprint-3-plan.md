@@ -37,6 +37,7 @@
 - **Postgres 16** в docker-compose, named volume `pgdata`.
 - **Один сервис backend** общается с БД. Никаких прямых connection-ов из других контейнеров.
 - **Валюта: только RUB на этом этапе.** Поле `currency CHAR(3) DEFAULT 'RUB'` есть в каждой таблице с денежными суммами **с CHECK-ограничением `currency = 'RUB'`** — не «на будущее» в смысле «можно вставить USD когда захотим», а в смысле «когда придёт время для мультивалюты, понадобится осознанная schema-миграция, которая снимет CHECK». Мультивалютная логика (конверсии, отчёты в нескольких валютах) — non-goal проекта; cross-currency агрегации в /balances/reports сейчас невозможны by design.
+- **Error response format:** дефолтный FastAPI `{"detail": str | list}`. Без RFC 7807, без кастомных code-полей. 422 для валидации (Pydantic), 401/403/404 с человекочитаемым `detail`, 500 — `{"detail": "Internal Server Error"}` без traceback'a в проде. Контракт фиксирован, чтобы фронт в 3b знал что парсить.
 
 ## Структура backend/ (дополнения к Sprint 2)
 
@@ -224,13 +225,21 @@ CREATE TABLE budgets (
   starts_on    date NOT NULL,
   ends_on      date NULL,
   archived_at  timestamptz NULL,
-  created_at   timestamptz NOT NULL DEFAULT now()
+  created_at   timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT budgets_dates_chk CHECK (ends_on IS NULL OR ends_on > starts_on)
 );
 CREATE UNIQUE INDEX budgets_active_uq
   ON budgets (user_id, category_id, period) WHERE archived_at IS NULL;
 ```
 
 Одна активная бюджет-политика на пару (категория × период). Архивные не мешают.
+
+**Семантика `ends_on`:**
+- `ends_on IS NULL` — «открытый» бюджет, повторяется на каждый `period` бесконечно. `period_ends_on` в `/api/budgets/status` вычисляется как конец текущего календарного `period` от `starts_on` (например, для `period='month'` и `starts_on='2026-04-15'` — это `2026-04-30`). Каждый новый месяц «сбрасывает» счётчик в `/budgets/status`.
+- `ends_on NOT NULL` — кампанийный бюджет на фиксированный промежуток. После `ends_on` бюджет неактивен (фильтруется в `/budgets/status`). Юзер может архивировать.
+
+Это единственный валидный способ интерпретации; `ends_on` **не** является «overrid'ом» для естественного конца периода.
 
 ### receipts
 
@@ -293,15 +302,52 @@ SYSTEM_CATEGORIES = [
 В `services/user_provisioning.py`:
 
 ```python
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 DEFAULT_ACCOUNTS = [
-    ("Карта",    "card", 0, "💳"),
-    ("Наличные", "cash", 0, "💵"),
+    ("Карта",    "card", "💳"),
+    ("Наличные", "cash", "💵"),
 ]
 
 async def ensure_user_provisioned(session: AsyncSession, tg_user: TelegramUser) -> User:
-    # 1. Upsert user (INSERT ... ON CONFLICT (tg_id) DO UPDATE ...).
-    # 2. Для каждого дефолтного счёта: INSERT ... ON CONFLICT (user_id, name) WHERE archived_at IS NULL DO NOTHING.
-    #    Идемпотентность гарантирует partial unique index, не application-level count.
+    # 1. Upsert user — ON CONFLICT по натуральному ключу tg_id.
+    user = (await session.execute(
+        pg_insert(User)
+        .values(
+            tg_id=tg_user.id,
+            first_name=tg_user.first_name,
+            last_name=tg_user.last_name,
+            username=tg_user.username,
+            language_code=tg_user.language_code,
+            is_premium=tg_user.is_premium,
+        )
+        .on_conflict_do_update(
+            index_elements=["tg_id"],
+            set_={
+                "first_name": tg_user.first_name,
+                "last_name": tg_user.last_name,
+                "username": tg_user.username,
+                "language_code": tg_user.language_code,
+                "is_premium": tg_user.is_premium,
+                "updated_at": func.now(),
+            },
+        )
+        .returning(User)
+    )).scalar_one()
+
+    # 2. Seed default accounts. Partial unique index `accounts_user_name_uq` требует,
+    # чтобы `index_where` в ON CONFLICT точно совпадал с предикатом индекса —
+    # иначе Postgres падает: "no unique or exclusion constraint matching the ON CONFLICT specification".
+    for name, type_, icon in DEFAULT_ACCOUNTS:
+        await session.execute(
+            pg_insert(Account)
+            .values(user_id=user.id, name=name, type=type_, initial_balance_minor=0, icon=icon)
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "name"],
+                index_where=Account.archived_at.is_(None),
+            )
+        )
+    return user
 ```
 
 **Провизионинг вызывается ровно из `GET /api/me`**, не из общей dependency `current_user`. Причина: dependency не должна выполнять writes на каждом запросе — это и неявно, и racy. Контракт: первое обращение нового юзера обязательно через `/api/me` (фронт уже так делает, см. Sprint 2), на всех остальных endpoint-ах `current_user` делает один read-only `SELECT users WHERE tg_id = $1` и 401-ит если юзера ещё нет.
@@ -355,6 +401,30 @@ GET    /api/reports/calendar                  ?from=&to=     → [{date, expense
 
 `PATCH /api/transactions/{id}` — только мутабельные поля (`note`, `occurred_at`). Сумма, тип, счета — иммутабельны: чтобы исправить → удалить и создать новую. Это сохраняет историю в чистоте; в Pulse при работе с банковскими/маркетплейс-транзакциями этот паттерн критичен (нельзя пост-фактум менять зафиксированные движения).
 
+### Авторизация per-resource endpoints
+
+Все `/{id}`-endpoint-ы под `/api/{accounts,categories,transactions,goals,budgets}` (GET, PATCH, DELETE) должны **фильтровать по `user_id = current_user.id` в самом SELECT**, не post-fetch:
+
+```python
+stmt = select(Account).where(Account.id == account_id, Account.user_id == current_user.id)
+```
+
+Mismatch → `404 Not Found`, **никогда не `403`** — чтобы не палить существование чужих ID. На каждый из трёх routers (`accounts`, `categories`, `transactions`) в тестах обязательный кейс «user B GET/PATCH/DELETE для ID, принадлежащего user A → 404». Стабы (`goals`, `budgets`) к 3b — тот же контракт.
+
+Категории — особый случай: системные (`user_id IS NULL`) **read-only для всех**. PATCH/DELETE на системную категорию → `403 Forbidden` (а не 404 — здесь существование строки публично). Тест в `test_categories.py`: «PATCH/DELETE на seed-категорию → 403».
+
+### Pydantic-схемы: whitelist полей
+
+**POST схемы** на запись не принимают `currency` ни в одной таблице — сервер всегда пинит `RUB`. Иначе клиент шлёт `"USD"`, БД ругается CHECK-ом, возвращается 500 IntegrityError вместо красивого 422. По мере введения мультивалюты — открыть поле через миграцию.
+
+**PATCH схемы** — строгий whitelist мутабельных полей, не Optional-копия модели:
+- `accounts`: `name?`, `icon?`, `archived_at?`
+- `categories` (только когда `user_id = current_user.id`): `name?`, `icon?`, `archived_at?`
+- `transactions`: `note?`, `occurred_at?` (см. выше про иммутабельность)
+- `goals`, `budgets`: фиксируется в 3b plan
+
+`archived_at: null` для un-archive разрешён намеренно (UI кнопка «вернуть из архива»).
+
 ## Балансы и отчёты — derived SQL
 
 ### Текущий баланс одного счёта
@@ -379,6 +449,12 @@ GROUP BY a.id, a.initial_balance_minor;
 В `services/balances.py` пишется один раз, переиспользуется в `/balances`, `/goals/{id}/progress`, и в репортах. Не дублируется.
 
 После XOR-CHECK на `adjustment` (см. таблицу `transactions`) каждая adjustment-строка имеет ровно один non-null FK и участвует ровно в одном из join-ов (`t_in` или `t_out`). Семантика `adjustment` — **дельта** (+N или −N к балансу счёта), не «установить ровно N». Reset-семантика не предусмотрена; для пересчёта баланса с известного значения юзер создаёт adjustment на разницу.
+
+Знак дельты кодируется тем, какой FK установлен; `amount_minor` всегда положительный:
+- `adjustment` с `to_account_id` set, `from_account_id` null → **+amount_minor** к балансу счёта.
+- `adjustment` с `from_account_id` set, `to_account_id` null → **−amount_minor** от баланса.
+
+UI Sprint 3b будет давать две кнопки («корректировка в плюс» / «в минус»), которые транслируются в правильный FK при POST.
 
 ### Календарь
 
@@ -415,11 +491,17 @@ WHERE user_id = $1
 `tests/test_models.py` — БД-уровень, ловят регрессии в CHECK:
 
 - `expense` без `from_account_id` → IntegrityError
+- `expense` с `to_account_id` non-null → IntegrityError
+- `income` без `to_account_id` → IntegrityError
+- `income` с `from_account_id` non-null → IntegrityError
 - `transfer` с одинаковыми `from_account_id` и `to_account_id` → IntegrityError
 - `transfer` с `category_id` → IntegrityError
+- `transfer` без обоих FK → IntegrityError
 - `adjustment` с обоими `from_account_id` и `to_account_id` non-null → IntegrityError (XOR enforced)
+- `adjustment` с обоими FK null → IntegrityError
 - `amount_minor = 0` → IntegrityError (положительность)
 - `currency = 'USD'` в любой таблице → IntegrityError
+- `budgets.ends_on <= starts_on` → IntegrityError (`budgets_dates_chk`)
 - Архивация категории не каскадит на исторические транзакции (FK `ON DELETE RESTRICT`)
 - Попытка DELETE категории/счёта с зависимой транзакцией → IntegrityError (RESTRICT)
 
@@ -437,6 +519,9 @@ WHERE user_id = $1
 - Первый /api/me нового tg_id → создаётся user + 2 default accounts
 - Повторный /api/me того же tg_id → user обновляется, accounts НЕ дублируются
 - Concurrent /api/me от одного юзера (класс `TestConcurrency`, без SAVEPOINT) → ровно 2 accounts. Защита — partial unique index `accounts (user_id, name) WHERE archived_at IS NULL` + `INSERT ... ON CONFLICT DO NOTHING`, не application-level count
+- **Идемпотентность provisioning без ошибок:** второй вызов `ensure_user_provisioned` для того же `tg_id` не должен поднять `ProgrammingError`/`InvalidColumnReference` (типичный симптом отсутствующего `index_where` в `ON CONFLICT`). Тест явно проверяет успешный return, а не только финальное число строк — иначе ошибка в первом INSERT тихо роллбэкнула бы транзакцию.
+
+Также в `tests/test_accounts.py`, `test_categories.py`, `test_transactions.py` обязательный кейс на каждый router: **user B GET/PATCH/DELETE для ID, принадлежащего user A → 404**. В `test_categories.py` дополнительно: **PATCH/DELETE на системную (`user_id IS NULL`) категорию → 403**.
 
 Остальные тесты — стандартные FastAPI endpoint-тесты через TestClient: 401 без auth, 200 happy, 422 на невалидные тела, 404 на чужие ресурсы.
 
@@ -506,7 +591,7 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 
 3. **Базовая обвязка БД** — `app/db/session.py` (async_engine, AsyncSessionLocal, dependency `get_session`), `app/db/base.py` (DeclarativeBase). Никаких моделей пока — это инфра.
 
-4. **Alembic init** — `uv run alembic init -t async alembic` (async-шаблон, не дефолтный). Поправить `alembic/env.py`: читать `DATABASE_URL` из `app.config.settings`, `async_engine_from_config` + `connection.run_sync(do_migrations)` (готово в шаблоне). В `context.configure(...)` включить `compare_type=True`, `compare_server_default=True`, и если версия alembic поддерживает — `compare_check_constraints=True`. Явный `from app.models import *` (или импорт `app.models.__init__`), чтобы `Base.metadata` была заполнена — иначе autogenerate выдаст пустую миграцию без предупреждения.
+4. **Alembic init** — `uv run alembic init -t async alembic` (async-шаблон, не дефолтный). Поправить `alembic/env.py`: читать `DATABASE_URL` из `app.config.settings`, `async_engine_from_config` + `connection.run_sync(do_migrations)` (готово в шаблоне). В `context.configure(...)` включить `compare_type=True`, `compare_server_default=True`. **CHECK-constraint comparison Alembic не поддерживает** (issue #1761 всё ещё open) — CHECK + partial-index DDL пишется руками, см. Step 6. `app/models/__init__.py` должен явно импортировать каждый модуль моделей (`from .user import User`, `from .account import Account`, ...), чтобы `import app.models` зарегистрировал все таблицы на `Base.metadata` — иначе autogenerate выдаст пустую миграцию без предупреждения.
 
 5. **Модели SQLAlchemy** — `app/models/*.py`, по одной на таблицу. Импортировать все в `models/__init__.py` чтобы Alembic их видел.
 
@@ -516,12 +601,12 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 
 8. **Миграция 0002 — сидинг категорий.** Data migration: `op.bulk_insert(categories_table, [{user_id: None, name, kind, icon}, ...])`. На downgrade — `DELETE FROM categories WHERE user_id IS NULL` (системные = `user_id IS NULL`, единственный признак).
 
-9. **`user_provisioning` service** — `ensure_user_provisioned(session, tg_user) -> User`: upsert user через `INSERT ... ON CONFLICT (tg_id) DO UPDATE ... RETURNING`, затем для каждого дефолтного счёта `INSERT ... ON CONFLICT DO NOTHING` против `accounts_user_name_uq`. Никаких `SELECT count`. Одна транзакция.
+9. **`user_provisioning` service** — `ensure_user_provisioned(session, tg_user) -> User`: upsert user через `pg_insert(User).on_conflict_do_update(index_elements=["tg_id"], set_={...}).returning(User)`. Для каждого дефолтного счёта — `pg_insert(Account).on_conflict_do_nothing(index_elements=["user_id","name"], index_where=Account.archived_at.is_(None))`. **`index_where` обязателен** — без него `ON CONFLICT` против partial unique index не сматчит constraint и упадёт runtime-ом. Никаких `SELECT count`. Одна транзакция на весь provisioning.
 
 10. **Обновить `auth/deps.py`** — `current_user` остаётся read-only: один `SELECT users WHERE tg_id = $1`, возвращает ORM `User`, 401 если юзера ещё нет. Сигнатура меняется с `-> TelegramUser` на `-> User`. `routers/me.py` теперь сам вызывает `ensure_user_provisioned(session, tg_user)` (не через dependency) и конструирует `TelegramUser`-ответ из ORM `User`. На всех остальных endpoint-ах `current_user: User = Depends(current_user)` — никаких writes на каждый запрос.
 
 11. **Routers — 3a vs 3b:**
-    - **3a (с телами + тестами):** `accounts`, `categories`, `transactions`. Pydantic in/out схемы. Каждый router сразу с тестами в `tests/test_<name>.py`.
+    - **3a (с телами + тестами):** `accounts`, `categories`, `transactions`. Pydantic in/out схемы. Каждый router сразу с тестами в `tests/test_<name>.py`. **Каждый router следует правилам из секций «Авторизация per-resource endpoints» и «Pydantic-схемы: whitelist» — это контракт, не рекомендация.** В `categories` router отдельная проверка: при PATCH/DELETE если `category.user_id IS NULL` (системная) — 403 до того как делается мутация.
     - **3a (стабы, без тестов):** `goals`, `budgets`, `reports`. Файл роутера + response-схемы, GET-эндпоинты возвращают `[]` / пустой объект соответствующей формы, POST/PATCH/DELETE — `raise HTTPException(501, "Not implemented in 3a — see Sprint 3b")`. Цель — застолбить URL-пространство и схемы ответов, чтобы фронт мог писаться против stable contract.
     - **3b:** наполнить тела goals/budgets/reports + соответствующие тесты + frontend интеграция.
 
@@ -571,9 +656,9 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 - `backend/app/services/user_provisioning.py`, `backend/app/services/balances.py`, `backend/app/services/reports.py`
 - `backend/app/seed/system_categories.py`
 - `backend/tests/test_models.py`, `test_balances.py`, `test_user_provisioning.py`, `test_accounts.py`, `test_categories.py`, `test_transactions.py`, `test_goals.py`, `test_budgets.py`, `test_reports.py`
-- `docs/adr/0004-event-sourced-balances.md`
-- `docs/adr/0005-receipt-storage-backend.md`
-- `docs/adr/0006-migrations-via-dockerfile-cmd.md` (миграции в Dockerfile CMD, не в FastAPI lifespan; причина — async-lifespan deadlock с alembic)
+- `docs/adr/0004-event-sourced-balances.md` — **что в ADR:** баланс счёта = `initial_balance + Σ(transfers in) − Σ(transfers out)`; пересчёт on-read. Trade-off: проще запись + аудит-история out-of-the-box vs. дороже чтение. Trigger для перехода на materialized cache — `EXPLAIN ANALYZE` балансного SQL `> 50ms` на типичном юзере (десятки тысяч транзакций), не «когда станет много пользователей».
+- `docs/adr/0005-receipt-storage-backend.md` — **что в ADR:** решение отложено до Sprint 7+. Кандидаты: (a) Telegram file_id — бесплатно, но привязка к боту, (b) S3 / Cloud.ru Object Storage — стандартно, но платно, (c) местная FS на VPS — простейшее, но не масштабируется. В Sprint 3 — только таблица `receipts` со `storage_key text` (произвольная строка), который интерпретируется решением из 0005.
+- `docs/adr/0006-migrations-via-dockerfile-cmd.md` — **что в ADR:** root cause = `alembic.command.upgrade()` блокирующий sync API внутри async FastAPI lifespan создаёт nested event loop через asyncpg драйвер — deadlock. Workaround через `asyncio.to_thread` + sync psycopg драйвер дороже (вторая копия драйвера в образе) чем migrate-then-serve через `CMD`. Trade-off: при multi-replica deployment один из инстансов будет проигрывать гонку и крашиться — на этом этапе переезжаем на init-container.
 
 **Modified:**
 - `infra/compose/docker-compose.yml` (postgres service, depends_on healthcheck)
@@ -584,22 +669,26 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 - `backend/app/auth/deps.py` (`current_user` → read-only, return type ORM `User`, 401 если юзера нет)
 - `backend/app/routers/me.py` (использует ORM `User`; сам вызывает `ensure_user_provisioned`)
 - `.env.example` (POSTGRES_PASSWORD)
-- `ROADMAP.md` (Sprint 3 → 3a/3b split; Sprint 4 нумерацию сдвинуть)
-- `README.md` (stack section: добавить Postgres 16, asyncpg, Alembic; упомянуть 3a/3b split в плане спринтов)
-- `docs/adr/0001-backend-fastapi.md` (versions note: asyncpg + alembic actual versions, async template)
+- `ROADMAP.md` (Sprint 3 → 3a/3b split; **Sprint 4 нумерацию сдвинуть на Sprint 5** — соответственно SDK-миграция и template-cleanup из `CLAUDE.local.md` тоже переезжают на 5).
+- `README.md` (stack section: добавить Postgres 16, asyncpg, Alembic; упомянуть 3a/3b split в плане спринтов).
+- `CLAUDE.local.md` (синхронизировать «Things I'm deliberately not fixing yet» — Sprint 4 → Sprint 5; **обновляется в том же коммите**, что и ROADMAP, чтобы не разъехалось).
+- `docs/adr/0001-backend-fastapi.md` (versions note: asyncpg + alembic actual versions, async template).
 
 ## Verification
 
 - `uv run pytest -v` — все тесты Sprint 3a зелёные (test_models, test_balances, test_user_provisioning, test_accounts, test_categories, test_transactions). Стабы goals/budgets/reports — без тестов.
 - `uv run alembic upgrade head` на чистой БД → 7 таблиц + 18 категорий.
-- `uv run alembic downgrade base` **на пустой БД (без данных)** → миграции обратимы. Downgrade с данными не покрыт: circular FK `transactions.receipt_id ↔ receipts.user_id` может дать FK violation в зависимости от порядка drop'ов — этот сценарий пока не тестируется.
+- `uv run alembic downgrade base` **на пустой БД (без данных)** → миграции обратимы. Downgrade с данными не покрыт: FK-цепочка `transactions → receipts → users` требует drop'ов в правильном порядке, autogenerate-ный downgrade при наличии данных может дать FK violation — этот сценарий пока не тестируется.
 - В Postgres через psql: `\d+ transactions` показывает все CHECK-constraint-ы текстом; INSERT нарушающий CHECK падает.
 - **XOR на adjustment:** INSERT транзакции с `kind='adjustment'`, оба `from_account_id` и `to_account_id` non-null → `IntegrityError: transactions_kind_fields_chk`.
 - **Currency lock:** INSERT в любую таблицу с `currency = 'USD'` → IntegrityError.
 - `curl /api/me` (валидный initData) → user в БД, 2 accounts автосозданы. Повторный вызов — accounts не дублируются (защита — partial unique index, не application count).
 - `curl /api/accounts/balances` → корректный JSON, балансы считаются.
 - Создать через curl: expense 3000 → баланс «Карта» падает на 3000. transfer 1000 «Карта» → «Наличные» → две дельты, сумма по всем счетам сохраняется. adjustment +500 на «Карта» → +500. adjustment −300 на «Наличные» → −300.
-- `curl /api/goals`, `/api/budgets`, `/api/reports/*` (стабы) → 200 с пустыми ответами правильной формы.
+- **Стабы goals/budgets/reports:** GET → `200` с пустыми ответами (`[]` или `{}` соответствующей формы), POST/PATCH/DELETE → `501 Not Implemented`. Сами URL'ы определены и зарегистрированы в FastAPI router'e.
+- **Cross-resource auth:** создать второго пользователя (другой `tg_id`), под его токеном попытаться `GET/PATCH/DELETE /api/accounts/<id-первого-юзера>` → `404`. Аналогично для categories и transactions.
+- **System category protection:** под валидным токеном `PATCH /api/categories/<id-системной>` → `403`. `DELETE /api/categories/<id-системной>` → `403`.
+- **Provisioning idempotency:** дважды дёрнуть `/api/me` подряд (один tg_id) → оба ответа 200, ни в логах backend, ни в Postgres warning'ов про partial-index ON CONFLICT.
 - Регрессия Sprint 1+2: Mini App открывается, «Hello, name» работает, HTTPS живой.
 - `docker compose down && docker compose up -d` → данные не теряются (`pgdata` volume), миграции на старте проходят и не зависают (lifespan-deadlock не воспроизводится).
 
@@ -607,12 +696,12 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 
 - **Pagination /transactions.** Cursor-based на `(occurred_at, id)`. Lock-in решения — в коде, не в плане.
 - **Soft-delete vs hard-delete для transactions.** Сейчас hard. Если в Sprint 5 при догфуде понадобится «undo» — добавим `deleted_at` миграцией.
-- **`PATCH /api/categories` для системных.** Скорее запретим (403) — системные неизменяемы, пусть юзер создаёт свою копию если хочет переименовать.
 - **Goal progress when `linked_account_id` IS NULL.** Что считать прогрессом? Один из вариантов: сумма всех `income` категории "Зарплата" с момента создания цели. Или просто требовать `linked_account_id`. Решим в Sprint 3b при имплементации `/goals/{id}/progress`.
+- **Archived accounts в новой транзакции.** БД не запрещает создать `expense from archived_account`. Application-level правило: `POST /api/transactions` с `archived_at IS NOT NULL` счётом → `422 {"detail": "Account is archived"}`. Зафиксируем при имплементации router'а transactions.
 
 ## Статус plan-review
 
-Прогон через `plan-reviewer` субагента выполнен; правки применены. Главные результаты ревью:
+Прогнано через `plan-reviewer` дважды. После первого прохода: 7 must-fix + 6 consistency. После второго прохода (с расширенным определением reviewer'а — добавлены секции про prose-invariants, API surface audit, operational shape + self-check): 6 must-fix + N consistency. Все правки применены. Главные результаты обоих ревью:
 
 - **adjustment XOR-CHECK** — исправлен (старая форма `OR` позволяла обоим FK быть non-null, что превращало `adjustment` в `transfer` или давало no-op при `from=to`).
 - **Миграции вынесены из FastAPI lifespan в Dockerfile CMD** — async lifespan + `alembic command.upgrade` детерминированно вешает event loop (alembic #1483/#1722).
@@ -622,5 +711,14 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 - **`is_system` удалён** из categories — системность = `user_id IS NULL`, единственный источник истины.
 - **Sprint 3 расщеплён на 3a/3b** — full schema в 3a, тела goals/budgets/reports + UI в 3b.
 - **Тесты: SAVEPOINT-стратегия** + отдельный `@pytest.mark.no_rollback` для migrations и concurrency.
+
+Второй проход дополнительно поймал:
+
+- **`ON CONFLICT` против partial unique index требует `index_where`** — без него Postgres падает runtime-ом. Service pseudocode + Step 9 + verification теперь явно указывают `index_where=Account.archived_at.is_(None)`.
+- **`compare_check_constraints=True`** — не существующий option Alembic (issue #1761 open), убран из Step 4.
+- **Cross-resource ownership check** — добавлена секция «Авторизация per-resource endpoints»; mismatch → 404 (не 403), системные категории → 403.
+- **Mass-assignment whitelist** — POST схемы не принимают `currency`; PATCH схемы — строгий whitelist полей.
+- **`budgets_dates_chk CHECK (ends_on > starts_on)`** + зафиксирована семантика `ends_on IS NULL` (открытый, рекуррентный) vs `ends_on NOT NULL` (кампания).
+- **Системные категории защищены на уровне handler'а** + явные тесты в `test_categories.py`.
 
 Этот документ — финальный для Sprint 3a. План Sprint 3b пишется по закрытию 3a.
