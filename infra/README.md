@@ -13,7 +13,8 @@ infra/
 │   └── Caddyfile               # reverse proxy + auto-HTTPS
 ├── scripts/
 │   ├── check-env.sh            # сверяет .env c .env.example, печатает diff
-│   └── deploy.sh               # git pull + check-env + compose up + logs
+│   ├── sync-env.sh             # локально: рендерит .env из pass-store, scp на VPS
+│   └── deploy.sh               # локально: sync-env → ssh git pull + compose up + logs
 └── README.md                   # этот файл
 ```
 
@@ -21,26 +22,41 @@ infra/
 
 ## Deploy на VPS
 
-Однократная настройка:
+### Однократная настройка
+
+Локально (на ноутбуке/рабочей машине):
+
+- `pass-store` с двумя записями: `pulse-drill/postgres-password` и
+  `pulse-drill/bot-token`. Они читаются `sync-env.sh` в момент деплоя.
+- SSH алиас `pulse-drill` в `~/.ssh/config` — указывает на VPS.
+
+На VPS:
 
 ```bash
 git clone <repo> ~/pulse-field-drill
-cd ~/pulse-field-drill
-cp .env.example infra/compose/.env
-# Отредактировать infra/compose/.env: PUBLIC_DOMAIN, TELEGRAM_BOT_TOKEN,
-# POSTGRES_PASSWORD (strong, из pass(1) для Pulse — `pulse/db/postgres`).
-# DATABASE_URL и POSTGRES_USER/DB обычно как в example.
+# .env создастся при первом sync-env.sh. Вручную трогать не нужно.
 ```
 
-Каждый деплой:
+### Каждый деплой
+
+Локально:
 
 ```bash
-~/pulse-field-drill/infra/scripts/deploy.sh
+./infra/scripts/deploy.sh
 ```
 
-Скрипт делает `git pull --ff-only` → `check-env.sh` (если в `.env`
-не хватает переменных — exit 1 c diff'ом) → `docker compose up -d --build` →
-`docker compose logs --tail=50 backend`.
+Что делает:
+
+1. `sync-env.sh` — рендерит `.env` из `pass-store` (POSTGRES_PASSWORD,
+   TELEGRAM_BOT_TOKEN + fixed-значения для остальных), валидирует через
+   `check-env.sh`, scp'ит на VPS как `~/pulse-field-drill/infra/compose/.env`
+   с правами `chmod 600`.
+2. `ssh pulse-drill`: `git pull --ff-only` → `docker compose up -d --build`.
+3. `ssh pulse-drill`: tail `docker compose logs backend` — видно как
+   alembic накатывает миграции (Dockerfile CMD migrate-then-serve)
+   и стартует uvicorn.
+
+`PULSE_SSH_HOST` env-переменная переопределяет SSH-алиас если нужно.
 
 ## Что делать, если check-env упал
 
