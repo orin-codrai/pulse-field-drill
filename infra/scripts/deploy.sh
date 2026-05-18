@@ -2,16 +2,13 @@
 # deploy.sh — локальный one-command deploy на VPS.
 #
 # Workflow:
-#   1. sync-env.sh: рендерит .env из pass(1) → проверяет через check-env.sh →
-#      scp на VPS:~/pulse-field-drill/infra/compose/.env.
-#   2. ssh: git pull --ff-only + docker compose up -d --build + tail logs.
-#
-# Запускается ЛОКАЛЬНО (с моей машины). SSH алиас `pulse-drill` должен быть
-# настроен в ~/.ssh/config. Секреты должны лежать в pass-store по путям,
-# которые читает sync-env.sh (pulse-drill/postgres-password, pulse-drill/bot-token).
-#
-# Не делает: rollback, health-check ответа, миграций отдельно (миграции в
-# Dockerfile CMD migrate-then-serve, см. ADR-0006).
+#   1. sync-env.sh: рендерит .env из pass(1) → check-env → scp на VPS.
+#   2. Локально: npm run build → frontend/dist (Vite production bundle).
+#      На VPS Node не установлен — фронт билдится локально и rsync'ом
+#      кладётся в bind-mount Caddy.
+#   3. ssh: git pull --ff-only.
+#   4. rsync frontend/dist на VPS.
+#   5. ssh: docker compose up -d --build + tail logs.
 
 set -euo pipefail
 
@@ -25,12 +22,31 @@ echo "== sync .env to VPS =="
 "$SCRIPT_DIR/sync-env.sh"
 
 echo ""
-echo "== git pull + compose up -d --build on $SSH_HOST =="
+echo "== npm run build (frontend) =="
+# nvm может быть не в PATH non-interactive shell — подсасываем.
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.nvm/nvm.sh"
+fi
+(cd frontend && npm run build)
+
+echo ""
+echo "== git pull on $SSH_HOST =="
 ssh "$SSH_HOST" '
     set -eu
     cd ~/pulse-field-drill
     git pull --ff-only
-    cd infra/compose
+'
+
+echo ""
+echo "== rsync frontend/dist → VPS =="
+rsync -az --delete frontend/dist/ "$SSH_HOST:~/pulse-field-drill/frontend/dist/"
+
+echo ""
+echo "== docker compose up -d --build on $SSH_HOST =="
+ssh "$SSH_HOST" '
+    set -eu
+    cd ~/pulse-field-drill/infra/compose
     docker compose up -d --build
 '
 
