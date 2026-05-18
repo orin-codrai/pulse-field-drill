@@ -27,7 +27,7 @@ echo "== sync .env to VPS =="
 echo ""
 echo "== git pull + compose up -d --build on $SSH_HOST =="
 ssh "$SSH_HOST" '
-    set -euo pipefail
+    set -eu
     cd ~/pulse-field-drill
     git pull --ff-only
     cd infra/compose
