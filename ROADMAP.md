@@ -35,35 +35,63 @@
 
 ---
 
-## Sprint 3a — Postgres + core домен (~8–10ч) ← АКТИВНЫЙ
+## Sprint 3a — Postgres + core домен ✅ закрыт
 
 См. полный план: [`sprint-3-plan.md`](./sprint-3-plan.md).
 
-- [ ] Postgres 16 в `docker-compose.yml`, named volume `pgdata`, healthcheck
-- [ ] SQLAlchemy 2 + asyncpg + Alembic (async template)
-- [ ] Полная 7-таблица миграция (users, accounts, categories, transactions, goals, budgets, receipts) с ручными CHECK + partial unique indexes
-- [ ] Сидинг 18 системных категорий
-- [ ] User provisioning + 2 default accounts (idempotent через `ON CONFLICT` + partial unique index)
-- [ ] CRUD: `accounts`, `categories`, `transactions` + балансы
-- [ ] Стабы (URL + GET 200 + write 501): `goals`, `budgets`, `reports`
-- [ ] Миграции в Dockerfile CMD, не в lifespan (ADR-0006)
-- [ ] Cross-resource auth (404 на чужие ID) + system-category protection (403)
+- [x] Postgres 16 в `docker-compose.yml`, named volume `pgdata`, healthcheck
+- [x] SQLAlchemy 2 + asyncpg + Alembic (async template)
+- [x] Полная 7-таблица миграция с CHECK + partial unique indexes
+- [x] Сидинг 18 системных категорий
+- [x] User provisioning + 2 default accounts (idempotent через `ON CONFLICT` + partial unique index)
+- [x] CRUD: `accounts`, `categories`, `transactions` + балансы
+- [x] Стабы → потом full body для `goals`, `budgets`, `reports`
+- [x] Миграции в Dockerfile CMD, не в lifespan (ADR-0006)
+- [x] Cross-resource auth (404 на чужие ID) + system-category protection (403)
 
-**Exit criteria:** `curl /api/me` создаёт юзера + 2 счёта; expense/transfer/adjustment
-через `curl` дают корректные балансы; `psql \d+ transactions` показывает все
-CHECK-constraint-ы текстом.
+**Exit criteria достигнуты:** `curl /api/me` создаёт юзера + 2 счёта;
+expense/transfer/adjustment дают корректные балансы; CHECK-ограничения
+видны в psql. 65 тестов на момент закрытия 3a.
 
 ---
 
-## Sprint 3b — extras + UI (~5–8ч)
+## Sprint 3b — extras + UI (phased) ← АКТИВНЫЙ
 
-- [ ] Тела `goals` CRUD + `/goals/{id}/progress`
-- [ ] Тела `budgets` CRUD + `/budgets/status`
-- [ ] `/reports/month` + `/reports/calendar`
-- [ ] Frontend: экраны **Добавить** / **Список** / **Отчёт**
-- [ ] `var(--tg-theme-*)`, MainButton
+См. план: [`/home/orrin/.claude/plans/use-the-plan-reviewer-agent-resilient-conway.md`](../../.claude/plans/use-the-plan-reviewer-agent-resilient-conway.md).
 
-**Exit criteria:** реально пользуюсь со своего телефона.
+**Phase 1 — backend bodies ✅ закрыт**
+- [x] Тела `goals` CRUD + `/goals/{id}/progress` (linked → account_balance; unlinked → Σ income из системной «Зарплата»; broken-seed → 500)
+- [x] Тела `budgets` CRUD + `/budgets/status` (window: ISO Monday для week, expired excluded)
+- [x] `/reports/month` + `/reports/calendar`
+- [x] Cross-tenant FK guards (`_validate_*_ref` mirrors из transactions.py)
+- [x] IntegrityError mapping (409/422) на POST и PATCH
+- [x] 129 тестов всего на момент закрытия Phase 1
+
+**Phase 2 — минимальный frontend для догфуда ✅ закрыт**
+- [x] TabBar 3 таба (Балансы / Список / Меню)
+- [x] BalancesPage + общий итог + MainButton «+ Транзакция»
+- [x] TransactionsPage basic list (без фильтров)
+- [x] AddTransactionPage форма (все 4 kind + adjustment direction)
+- [x] MainButton ref-pattern (защита от stale closure)
+- [x] Event-bus refetch после mutation (lib/refetch.ts)
+- [x] Удалить template-страницы (часть Sprint 4 tech-debt)
+
+**🛑 PAUSE для догфуда (2-3 дня)** перед Phase 3.
+
+**Phase 3 — Analytics + filters (~3-4ч)**
+- [ ] AnalyticsPage (4-й таб) — month report
+- [ ] TransactionsPage filters (kind, period) + «Ещё 50» pagination
+
+**Phase 4 — Menu + manage screens (~4-5ч)**
+- [ ] MenuPage с подэкранами
+- [ ] GoalsPage + create/edit + progress UI
+- [ ] BudgetsPage + status UI + expired section
+- [ ] AccountsManagePage
+- [ ] CategoriesManagePage
+
+**Exit criteria 3b:** реально пользуюсь со своего телефона. Phase 4 может
+быть значительно урезана если goals/budgets окажутся мёртвой фичей по
+итогам dogfood'a.
 
 ---
 
