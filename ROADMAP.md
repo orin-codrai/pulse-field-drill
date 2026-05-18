@@ -93,9 +93,10 @@ CHECK-constraint-ы текстом.
 - [ ] `infra/cron/pg-backup.sh`: `pg_dump | gzip` + ротация 7 дней
 - [ ] systemd timer (или sidecar) для запуска бэкапа
 - [ ] WireGuard на VPS, SSH только из WG-подсети
-- [ ] `.github/workflows/deploy.yml`: push → SSH → `git pull` → `docker compose up -d --build`
+- [ ] `.github/workflows/deploy.yml`: push → SSH → `infra/scripts/deploy.sh` (env-check + git pull + compose up; уже существует с Sprint 3a)
 - [ ] `GET /api/health` + Caddy health-check
-- [ ] `infra/README.md` — runbook «снести VPS и развернуть заново»
+- [ ] Расширить `infra/README.md` до полного runbook «снести VPS и развернуть заново» (стартовый scaffold создан в Sprint 3a)
+- [ ] Подумать про шифрование секретов `.env` (sops/age/pass) — сейчас на VPS открытый файл
 
 **Exit criteria:** финальный экзамен — `apt purge docker` (или новый VPS),
 восстановление по runbook'у ≤30 минут.

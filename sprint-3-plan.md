@@ -565,7 +565,7 @@ volumes:
 POSTGRES_PASSWORD=changeme_locally
 ```
 
-VPS-`.env` обновляется руками — генерируется крепкий пароль, кладётся.
+VPS-`.env` (в `infra/compose/.env`) обновляется руками — генерируется крепкий пароль, кладётся. Перед `docker compose up` запускается `infra/scripts/check-env.sh` (см. `infra/README.md`), который сверяет имена переменных с `.env.example` — без этого compose валится поэтапно, по одной переменной за раз.
 
 ### Backend startup — миграции до uvicorn, не в lifespan
 
@@ -624,7 +624,7 @@ Lifespan в `app/main.py` остаётся пустым или использу�
     - POST transactions для каждого `kind` → 200 на валидных, 422 на невалидных
     - GET balances → математика правильная
 
-16. **Деплой на VPS** — git pull, `docker compose up -d --build` (--build чтобы пересобрать backend с alembic), посмотреть `docker compose logs backend` — миграции должны пройти.
+16. **Деплой на VPS** — `~/pulse-field-drill/infra/scripts/deploy.sh`. Скрипт делает `git pull --ff-only` → `check-env.sh` (показывает diff если в `infra/compose/.env` чего-то не хватает) → `docker compose up -d --build` → `docker compose logs --tail=50 backend`. Если deploy.sh упал на check-env — добавить недостающие переменные в `infra/compose/.env` (готовые строки даёт сам check-env), перезапустить. Миграции прогоняются автоматически при старте backend через `Dockerfile CMD` (см. Step 14).
 
 17. **Frontend — НЕ трогаем в Sprint 3a.** Текущий «Hello, name» в IndexPage остаётся. UI всех новых endpoints — Sprint 3b.
 
