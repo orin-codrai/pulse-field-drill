@@ -37,5 +37,19 @@ export async function apiFetch<T = unknown>(
     }
     throw new ApiError(res.status, detail);
   }
+  // 204 No Content: no body to parse (DELETE endpoints).
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export function apiPost<T>(path: string, raw: string, body: unknown): Promise<T> {
+  return apiFetch<T>(path, raw, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function apiPatch<T>(path: string, raw: string, body: unknown): Promise<T> {
+  return apiFetch<T>(path, raw, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export function apiDelete(path: string, raw: string): Promise<void> {
+  return apiFetch<void>(path, raw, { method: 'DELETE' });
 }
