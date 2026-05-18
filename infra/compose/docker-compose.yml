@@ -1,6 +1,21 @@
 name: pulse-field-drill
 
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-pulse}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pulse} -d ${POSTGRES_DB:-pulse}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -22,9 +37,13 @@ services:
     build:
       context: ../../backend
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       PULSE_ENV: ${PULSE_ENV:-prod}
+      DATABASE_URL: ${DATABASE_URL}
     # expose, not ports: backend reachable only via Caddy on the docker network
     expose:
       - "8000"
@@ -32,3 +51,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  pgdata:
