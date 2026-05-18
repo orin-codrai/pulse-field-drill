@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -17,6 +18,13 @@ TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://pulse:devpass@localhost:5432/pulse_test",
 )
+
+# Settings — pydantic-settings singleton, читает env при первом импорте
+# app.config. Задаём правильные значения ДО того, как любой тест импортит
+# app.*. Тестовые initData подписаны под BOT_TOKEN — настройки приложения
+# должны совпадать, иначе validate_init_data вернёт bad signature.
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", BOT_TOKEN)
+os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 
 
 def sign_init_data(
@@ -157,6 +165,44 @@ async def db_session(test_engine, request) -> AsyncIterator[AsyncSession]:
     SessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
     async with SessionLocal() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def app_client(db_session) -> AsyncIterator[AsyncClient]:
+    """FastAPI TestClient через httpx, с override get_session → test-session.
+
+    Все endpoint'ы в тесте используют ту же транзакцию что и db_session
+    фикстура — рукотворные mutations и API-ответы видны друг другу.
+    """
+    from app.db.session import get_session
+    from app.main import app
+
+    async def override_get_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_get_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def provisioned_user(db_session, valid_user):
+    """Юзер уже в БД с 2 default accounts. Эмулирует «фронт уже сходил
+    в /api/me хотя бы раз»."""
+    from app.schemas.user import TelegramUser
+    from app.services.user_provisioning import ensure_user_provisioned
+
+    tg = TelegramUser(**valid_user)
+    user = await ensure_user_provisioned(db_session, tg)
+    await db_session.commit()
+    return user
+
+
+@pytest.fixture
+def auth_header(valid_init_data) -> dict[str, str]:
+    return {"Authorization": f"tma {valid_init_data}"}
 
 
 def pytest_configure(config):
