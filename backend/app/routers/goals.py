@@ -1,13 +1,14 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_user
 from app.db.session import get_session
 from app.models import Account, Category, Goal, Transaction, User
 from app.schemas.goal import GoalCreate, GoalOut, GoalProgress, GoalUpdate
+from app.services.balances import account_balance
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -30,44 +31,6 @@ async def _validate_linked_account(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "linked_account_id: account is archived",
         )
-
-
-async def _account_balance_inline(session: AsyncSession, account_id: int) -> int:
-    """Inline per-account balance. Phase 1 commit 4 извлечёт общий
-    account_balance helper и заменит этот вызов."""
-    in_amount = case(
-        (
-            (Transaction.to_account_id == account_id)
-            & Transaction.kind.in_(("income", "transfer", "adjustment")),
-            Transaction.amount_minor,
-        ),
-        else_=0,
-    )
-    out_amount = case(
-        (
-            (Transaction.from_account_id == account_id)
-            & Transaction.kind.in_(("expense", "transfer", "adjustment")),
-            Transaction.amount_minor,
-        ),
-        else_=0,
-    )
-    stmt = (
-        select(
-            Account.initial_balance_minor
-            + func.coalesce(func.sum(in_amount), 0)
-            - func.coalesce(func.sum(out_amount), 0)
-        )
-        .select_from(Account)
-        .outerjoin(
-            Transaction,
-            (Transaction.from_account_id == Account.id)
-            | (Transaction.to_account_id == Account.id),
-        )
-        .where(Account.id == account_id)
-        .group_by(Account.initial_balance_minor)
-    )
-    result = await session.scalar(stmt)
-    return int(result) if result is not None else 0
 
 
 @router.get("", response_model=list[GoalOut])
@@ -146,7 +109,7 @@ async def goal_progress(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "goal not found")
 
     if goal.linked_account_id is not None:
-        current = await _account_balance_inline(session, goal.linked_account_id)
+        current = await account_balance(session, goal.linked_account_id)
     else:
         # Unlinked goal: Σ income категории «Зарплата» (только системная) с
         # момента создания цели. См. must-fix #1 в plan v2.
