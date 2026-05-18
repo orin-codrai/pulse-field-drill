@@ -1,65 +1,80 @@
 # Roadmap
 
-6 спринтов. У каждого — конкретный критерий готовности. Финальный экзамен
-после спринта 6: снести VPS и развернуть всё заново за ≤30 минут.
+6 спринтов (Sprint 3 расщеплён на 3a/3b — итого 7 фаз). У каждого — конкретный
+критерий готовности. Финальный экзамен после спринта 6: снести VPS и развернуть
+всё заново за ≤30 минут.
 
 ---
 
-## Sprint 1 — Hello World в Telegram (~3–4ч)
+## Sprint 1 — Hello World в Telegram ✅ закрыт
 
-- [ ] `gh repo create pulse --public --license=AGPL-3.0`
-- [ ] DNS: A-запись `pulse.<домен>` → VPS
-- [ ] `infra/compose/docker-compose.yml` — только Caddy
-- [ ] `infra/caddy/Caddyfile` — статика на `/`, заглушка `/api`
-- [ ] `frontend/` — форк `Telegram-Mini-Apps/reactjs-template`, собирается в статику
-- [ ] BotFather: `pulse_dev_bot`, WebApp URL зарегистрирован
+- [x] Caddy на cloud.ru VPS, HTTPS-сертификат Let's Encrypt
+- [x] DNS, BotFather, `t.me/pulse_drill_bot/app` через Direct Link
+- [x] `infra/compose/docker-compose.yml` — Caddy
+- [x] `infra/caddy/Caddyfile` — статика на `/`, заглушка `/api`
+- [x] `frontend/` — форк `Telegram-Mini-Apps/reactjs-template`
 
-**Exit criteria:** открыть бота в Telegram, нажать кнопку WebApp, увидеть
-страницу с применённой темой Telegram.
+**Exit criteria достигнуты:** бот открывается в Telegram, видна тема.
 
 ---
 
-## Sprint 2 — initData валидация (~3–4ч) ⭐ САМАЯ ЦЕННАЯ ФАЗА
+## Sprint 2 — initData валидация ✅ закрыт ⭐ САМАЯ ЦЕННАЯ ФАЗА
 
-- [ ] `backend/` структура: `pyproject.toml` (uv), `Dockerfile`, `app/`
-- [ ] `app/auth/init_data.py` — HMAC-SHA256 валидация
-- [ ] `app/deps.py` — FastAPI dependency `current_user`
-- [ ] `app/routers/me.py` — `GET /me`
-- [ ] `tests/test_init_data.py` — реальный + подделанный initData
-- [ ] backend-сервис в `docker-compose.yml`, прокси через Caddy на `/api`
-- [ ] Frontend шлёт `Authorization: tma <initDataRaw>`
+- [x] `backend/` структура: `pyproject.toml` (uv), `Dockerfile`, `app/`
+- [x] `app/auth/init_data.py` — HMAC-SHA256 валидация (9 тестов)
+- [x] `app/auth/deps.py` — FastAPI dependency `current_user`
+- [x] `app/routers/me.py` — `GET /api/me`
+- [x] `tests/test_init_data.py` — реальный + подделанный initData
+- [x] backend-сервис в `docker-compose.yml`, прокси через Caddy на `/api`
+- [x] Frontend шлёт `Authorization: tma <initDataRaw>` (см. ADR-0003)
 
-**Exit criteria:**
-- `curl -H "Authorization: tma фейк" .../api/me` → **401**
-- Открыть из Telegram → **200**, отдаёт `{tg_id, first_name, ...}`
+**Exit criteria достигнуты:** «Hello, name (#tg_id)» из Telegram WebApp.
 
 **Почему важно:** код `init_data.py` переедет в Pulse 1-в-1. Это
 единственная фаза, где «учебный» код тождественно равен «продакшен» коду.
 
 ---
 
-## Sprint 3 — Postgres и схема (~3–4ч)
+## Sprint 3a — Postgres + core домен (~8–10ч) ← АКТИВНЫЙ
 
-- [ ] Postgres 16 в `docker-compose.yml`, named volume `pgdata`
-- [ ] Alembic настроен, первая миграция
-- [ ] Сидинг 13 системных категорий (референс: `cenoff/Money-Bot`)
-- [ ] CRUD: `users`, `categories`, `transactions`
-- [ ] Endpoints: `GET /categories`, `POST/GET/DELETE /transactions`, `GET /reports/month`
+См. полный план: [`sprint-3-plan.md`](./sprint-3-plan.md).
 
-**Exit criteria:** через `curl` создать транзакцию и получить её обратно.
-Через `psql` подтвердить данные в БД.
+- [ ] Postgres 16 в `docker-compose.yml`, named volume `pgdata`, healthcheck
+- [ ] SQLAlchemy 2 + asyncpg + Alembic (async template)
+- [ ] Полная 7-таблица миграция (users, accounts, categories, transactions, goals, budgets, receipts) с ручными CHECK + partial unique indexes
+- [ ] Сидинг 18 системных категорий
+- [ ] User provisioning + 2 default accounts (idempotent через `ON CONFLICT` + partial unique index)
+- [ ] CRUD: `accounts`, `categories`, `transactions` + балансы
+- [ ] Стабы (URL + GET 200 + write 501): `goals`, `budgets`, `reports`
+- [ ] Миграции в Dockerfile CMD, не в lifespan (ADR-0006)
+- [ ] Cross-resource auth (404 на чужие ID) + system-category protection (403)
+
+**Exit criteria:** `curl /api/me` создаёт юзера + 2 счёта; expense/transfer/adjustment
+через `curl` дают корректные балансы; `psql \d+ transactions` показывает все
+CHECK-constraint-ы текстом.
 
 ---
 
-## Sprint 4 — UI (~4–5ч)
+## Sprint 3b — extras + UI (~5–8ч)
 
-- [ ] Экран **Добавить**: категория, сумма, заметка, `Telegram.WebApp.MainButton`
-- [ ] Экран **Список**: последние транзакции
-- [ ] Экран **Отчёт**: итог за месяц по категориям (`/api/reports/month`)
-- [ ] Тема: `var(--tg-theme-*)`
-- [ ] `useInitData()` из `@telegram-apps/sdk-react`, прокидывается в `fetch`
+- [ ] Тела `goals` CRUD + `/goals/{id}/progress`
+- [ ] Тела `budgets` CRUD + `/budgets/status`
+- [ ] `/reports/month` + `/reports/calendar`
+- [ ] Frontend: экраны **Добавить** / **Список** / **Отчёт**
+- [ ] `var(--tg-theme-*)`, MainButton
 
 **Exit criteria:** реально пользуюсь со своего телефона.
+
+---
+
+## Sprint 4 — Frontend tech-debt (~2–3ч)
+
+- [ ] SDK миграция `@tma.js/sdk-react` → `@telegram-apps/sdk-react@^3.3+` (после research'a v3.3 API; см. post-mortem в CLAUDE.local.md)
+- [ ] `tsc --noEmit` снова в `build` script (типы выровнены)
+- [ ] Шаблонный мусор: `frontend/.github/`, `frontend/LICENSE`, шаблонный README
+- [ ] Обновить `docs/adr/0003-auth-scheme-tma.md` если SDK сменил API contract
+
+**Exit criteria:** frontend на свежем SDK, type-check проходит, шаблонные артефакты убраны.
 
 ---
 

@@ -583,7 +583,7 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 
 ## Шаги исполнения (порядок)
 
-0. **Зафиксировать 3a/3b split** в `ROADMAP.md` и `README.md` до начала кода. Sprint 4 нумерацию сдвинуть: бывший «Sprint 4a UI» становится 3b. Это коммит-1 спринта, отдельно от инфры.
+0. **Зафиксировать 3a/3b split** в `ROADMAP.md` и `README.md` до начала кода. Sprint 4 scope сужается: бывший UI-scope переезжает в 3b, в Sprint 4 остаётся только tech-debt (SDK миграция + template cleanup + tsc fix — что и так туда привязано в `CLAUDE.local.md`). Sprint 5/6 без изменений. Это коммит-1 спринта, отдельно от инфры.
 
 1. **Postgres в compose** — добавить сервис, поднять локально, проверить `pg_isready`. Volume `pgdata` создан.
 
@@ -669,9 +669,8 @@ Lifespan в `app/main.py` остаётся пустым или использу�
 - `backend/app/auth/deps.py` (`current_user` → read-only, return type ORM `User`, 401 если юзера нет)
 - `backend/app/routers/me.py` (использует ORM `User`; сам вызывает `ensure_user_provisioned`)
 - `.env.example` (POSTGRES_PASSWORD)
-- `ROADMAP.md` (Sprint 3 → 3a/3b split; **Sprint 4 нумерацию сдвинуть на Sprint 5** — соответственно SDK-миграция и template-cleanup из `CLAUDE.local.md` тоже переезжают на 5).
-- `README.md` (stack section: добавить Postgres 16, asyncpg, Alembic; упомянуть 3a/3b split в плане спринтов).
-- `CLAUDE.local.md` (синхронизировать «Things I'm deliberately not fixing yet» — Sprint 4 → Sprint 5; **обновляется в том же коммите**, что и ROADMAP, чтобы не разъехалось).
+- `ROADMAP.md` (Sprint 3 → 3a/3b split; Sprint 4 scope сужается до tech-debt — SDK миграция + template cleanup + tsc fix; Sprint 5/6 без изменений).
+- `README.md` (Status: «Sprint 3a in progress»; frontend SDK в стеке: `@tma.js/sdk-react@^3.0` с пометкой про revert и плановой миграции в Sprint 4; Postgres/asyncpg/Alembic уже в стеке).
 - `docs/adr/0001-backend-fastapi.md` (versions note: asyncpg + alembic actual versions, async template).
 
 ## Verification
