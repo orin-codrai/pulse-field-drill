@@ -12,6 +12,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 RUN uv sync --frozen --no-dev
 
 
@@ -25,6 +27,11 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app /app/app
+COPY --from=builder /app/alembic /app/alembic
+COPY --from=builder /app/alembic.ini /app/alembic.ini
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# migrate-then-serve. alembic.command.upgrade() из async FastAPI lifespan
+# детерминированно вешает event loop (alembic discussions #1483, #1722) —
+# поэтому миграции прогоняются ДО старта uvicorn. См. ADR-0006.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
