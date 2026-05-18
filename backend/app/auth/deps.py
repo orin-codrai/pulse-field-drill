@@ -1,11 +1,20 @@
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.init_data import InvalidInitData, validate_init_data
 from app.config import settings
+from app.db.session import get_session
+from app.models import User
 from app.schemas.user import TelegramUser
 
 
-def current_user(authorization: str | None = Header(None)) -> TelegramUser:
+def tg_user_from_auth(authorization: str | None = Header(None)) -> TelegramUser:
+    """Парсит `Authorization: tma <raw>` → валидирует HMAC → возвращает TelegramUser.
+
+    Не трогает БД. Используется на /api/me перед provisioning'ом, и косвенно
+    через current_user на остальных endpoint'ах.
+    """
     if not authorization:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing auth")
     scheme, _, raw = authorization.partition(" ")
@@ -19,3 +28,22 @@ def current_user(authorization: str | None = Header(None)) -> TelegramUser:
         ).user
     except InvalidInitData as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
+
+
+async def current_user(
+    tg_user: TelegramUser = Depends(tg_user_from_auth),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    """Read-only lookup юзера в БД по tg_id. 401 если юзер не provision'ен.
+
+    Контракт: первое обращение нового юзера обязательно через GET /api/me
+    (фронт уже так делает, см. Sprint 2). На остальных endpoint'ах
+    отсутствие юзера в БД = логическая ошибка фронта.
+    """
+    user = await session.scalar(select(User).where(User.tg_id == tg_user.id))
+    if user is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "user not provisioned; call GET /api/me first",
+        )
+    return user
