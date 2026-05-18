@@ -7,29 +7,6 @@
 from httpx import AsyncClient
 
 
-async def test_budgets_get_empty(
-    app_client: AsyncClient, provisioned_user, auth_header
-):
-    r = await app_client.get("/api/budgets", headers=auth_header)
-    assert r.status_code == 200
-    assert r.json() == []
-
-
-async def test_budgets_status_empty(
-    app_client: AsyncClient, provisioned_user, auth_header
-):
-    r = await app_client.get("/api/budgets/status", headers=auth_header)
-    assert r.status_code == 200
-    assert r.json() == []
-
-
-async def test_budgets_post_not_implemented(
-    app_client: AsyncClient, provisioned_user, auth_header
-):
-    r = await app_client.post("/api/budgets", headers=auth_header, json={})
-    assert r.status_code == 501
-
-
 async def test_reports_month_empty_shape(
     app_client: AsyncClient, provisioned_user, auth_header
 ):
@@ -49,6 +26,6 @@ async def test_reports_calendar_empty(
 
 
 async def test_stubs_require_auth(app_client: AsyncClient):
-    for path in ["/api/budgets", "/api/budgets/status", "/api/reports/month"]:
+    for path in ["/api/reports/month", "/api/reports/calendar"]:
         r = await app_client.get(path)
         assert r.status_code == 401, f"{path} should 401 without auth"
