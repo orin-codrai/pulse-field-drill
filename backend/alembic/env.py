@@ -36,12 +36,28 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Expression-based индексы (COALESCE, DESC) живут только в миграции через op.execute —
+# autogenerate не умеет их сравнить с моделью и пытается их «удалить» на каждом
+# alembic check. Игнорируем их в diff.
+INDEXES_MANUAL_ONLY = {
+    "categories_user_name_uq",
+    "transactions_user_occurred_idx",
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
+    if type_ == "index" and name in INDEXES_MANUAL_ONLY:
+        return False
+    return True
+
+
 def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
