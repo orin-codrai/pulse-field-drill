@@ -157,10 +157,21 @@ async def db_session(test_engine, request) -> AsyncIterator[AsyncSession]:
 
     if not no_rollback:
         async with test_engine.begin() as conn:
+            # CASCADE на users → categories тоже truncate'нутся (FK CASCADE).
+            # Re-seed системных категорий после.
             await conn.execute(
                 text(f"TRUNCATE {', '.join(USER_TABLES)}, users RESTART IDENTITY CASCADE")
             )
-            await conn.execute(text("DELETE FROM categories WHERE user_id IS NOT NULL"))
+            from app.seed.system_categories import SYSTEM_CATEGORIES
+
+            for icon, name, kind in SYSTEM_CATEGORIES:
+                await conn.execute(
+                    text(
+                        "INSERT INTO categories (user_id, name, kind, icon) "
+                        "VALUES (NULL, :name, :kind, :icon)"
+                    ),
+                    {"name": name, "kind": kind, "icon": icon},
+                )
 
     SessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
     async with SessionLocal() as session:
