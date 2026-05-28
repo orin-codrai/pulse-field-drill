@@ -1,6 +1,6 @@
 import { List, Section, Cell, Input, Textarea, Select, Button } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
@@ -9,10 +9,19 @@ import { useCategories } from '@/hooks/useCategories';
 import { useMainButton } from '@/hooks/useMainButton';
 import { ApiError, apiPost } from '@/lib/api';
 import { parseRubInputToMinor, todayIso } from '@/lib/format';
+import { getLastAccountId, setLastAccountId } from '@/lib/lastAccount';
 import { bump } from '@/lib/refetch';
 
 type Kind = 'expense' | 'income' | 'transfer' | 'adjustment';
 type AdjustmentDir = 'in' | 'out';
+
+// Поле счёта-источника, которое дефолтим последним использованным (quick-add).
+// transfer: дефолтим «со счёта», «на счёт» юзер выбирает сам.
+function sourceAccountField(kind: Kind, dir: AdjustmentDir): 'from_account_id' | 'to_account_id' {
+  if (kind === 'income') return 'to_account_id';
+  if (kind === 'adjustment') return dir === 'in' ? 'to_account_id' : 'from_account_id';
+  return 'from_account_id';
+}
 
 interface FormState {
   kind: Kind;
@@ -70,6 +79,20 @@ export const AddTransactionPage = () => {
     return [];
   }, [allCategories, form.kind]);
 
+  // Дефолт счёта (quick-add ≤3 тапа): последний использованный, иначе первый active.
+  const defaultAccountId = useMemo(
+    () => getLastAccountId() ?? accounts[0]?.id ?? null,
+    [accounts],
+  );
+
+  // Заполняем счёт-источник дефолтом, если поле пустое. Срабатывает на загрузку
+  // счетов и на смену kind/direction (кнопки сбрасывают счёт в null).
+  useEffect(() => {
+    if (defaultAccountId === null) return;
+    const field = sourceAccountField(form.kind, form.adjustment_dir);
+    setForm((f) => (f[field] === null ? { ...f, [field]: defaultAccountId } : f));
+  }, [defaultAccountId, form.kind, form.adjustment_dir]);
+
   // Whitelist body: explicit object, не {...formState}. Mass-assignment guard.
   function buildPayload(): Record<string, unknown> | null {
     const amount = parseRubInputToMinor(form.amount_input);
@@ -125,6 +148,8 @@ export const AddTransactionPage = () => {
     setSubmitError(null);
     try {
       await apiPost<unknown>('/api/transactions', raw, payload);
+      const used = form[sourceAccountField(form.kind, form.adjustment_dir)];
+      if (used !== null) setLastAccountId(used);
       bump('balances');
       bump('transactions');
       navigate(-1);
@@ -177,6 +202,16 @@ export const AddTransactionPage = () => {
           </Section>
         )}
 
+        <Section header="Сумма">
+          <Input
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            value={form.amount_input}
+            onChange={(e) => setForm({ ...form, amount_input: e.target.value })}
+          />
+        </Section>
+
         <Section header="Счёт">
           {(form.kind === 'expense' ||
             form.kind === 'transfer' ||
@@ -228,16 +263,6 @@ export const AddTransactionPage = () => {
             </Select>
           </Section>
         )}
-
-        <Section header="Сумма">
-          <Input
-            type="text"
-            inputMode="decimal"
-            placeholder="0"
-            value={form.amount_input}
-            onChange={(e) => setForm({ ...form, amount_input: e.target.value })}
-          />
-        </Section>
 
         <Section header="Дата">
           <Input
