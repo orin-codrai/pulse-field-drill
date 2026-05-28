@@ -48,6 +48,10 @@ ssh "$SSH_HOST" '
     set -eu
     cd ~/pulse-field-drill/infra/compose
     docker compose up -d --build
+    # Caddyfile bind-mounted → docker compose up не перечитывает его, если
+    # сам сервис не пересоздан. Reload явно (zero-downtime), чтобы изменения
+    # конфига (напр. Cache-Control) применялись на каждом деплое.
+    docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 '
 
 echo ""
