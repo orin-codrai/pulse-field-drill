@@ -32,7 +32,11 @@ services:
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-:80}
     volumes:
-      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Директория, не одиночный файл: bind-mount файла привязан к inode, а
+      # git pull заменяет Caddyfile (atomic rename → новый inode) — контейнер
+      # остаётся со старым inode и старым конфигом. Mount директории резолвит
+      # имя заново, обновлённый Caddyfile виден, caddy reload его подхватывает.
+      - ../caddy:/etc/caddy:ro
       - ../../frontend/dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
