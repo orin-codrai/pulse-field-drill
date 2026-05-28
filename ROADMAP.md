@@ -76,26 +76,35 @@ expense/transfer/adjustment дают корректные балансы; CHECK-
 - [x] Event-bus refetch после mutation (lib/refetch.ts)
 - [x] Удалить template-страницы (часть Sprint 4 tech-debt)
 
-**🛑 PAUSE для догфуда (2-3 дня)** перед Phase 3.
-
-**Phase 3 — Analytics + filters (~3-4ч)**
-- [ ] AnalyticsPage (4-й таб) — month report
-- [ ] TransactionsPage filters (kind, period) + «Ещё 50» pagination
-
-**Phase 4 — Menu + manage screens (~4-5ч)**
-- [ ] MenuPage с подэкранами
-- [ ] GoalsPage + create/edit + progress UI
-- [ ] BudgetsPage + status UI + expired section
-- [ ] AccountsManagePage
-- [ ] CategoriesManagePage
-
-**Exit criteria 3b:** реально пользуюсь со своего телефона. Phase 4 может
-быть значительно урезана если goals/budgets окажутся мёртвой фичей по
-итогам dogfood'a.
+**🛑 PAUSE для догфуда (2 дня вдвоём) — проведён.** Выводы изменили цель проекта:
+планирование важнее аналитики, нужен multi-user, нужны конверты, дизайн отталкивает.
+Phase 3 (Analytics) и Phase 4 (budgets/goals UI) — **в backlog**. См. фидбек
+[`docs/v1-feedback-and-plan-correction.md`](./docs/v1-feedback-and-plan-correction.md).
 
 ---
 
-## Sprint 4 — Frontend tech-debt (~2–3ч)
+## Путь до v1.0 — «пригоден для личного использования» ← АКТИВНЫЙ
+
+Цель уточнена: довести финтрекер до личного use (я + партнёр), закрыть галку,
+вернуться к основному Pulse. Полный план: [`docs/v1.0-plan.md`](./docs/v1.0-plan.md).
+Done-criteria и архитектурные решения — там же + ADR 0007/0008/0009.
+
+| Phase | Что | DC | Статус |
+|---|---|---|---|
+| 3 | Quick-add ≤3 тапа | #2 | [ ] |
+| 4 | Workspace foundation (re-key user_id→workspace_id) | под #1 | [ ] |
+| 5 | Планирование + прогноз (+ подкатегории) | #3 | [ ] |
+| 6 | Конверты pay-yourself-first | #4 | [ ] |
+| 7 | Sharing + регистрация + удаление | #1 | [ ] |
+| 8 | Дизайн-рефреш (design-tokens + SVG icons) | #5 | [ ] |
+| 9 | FINAL GATE — 14 дней ежедневного использования | #6 | [ ] |
+
+**Exit criteria v1.0:** все 6 done-criteria закрыты, 14 дней подряд пользуюсь
+вместо альтернативы. Старый Sprint 4 (frontend tech-debt) вливается в Phase 8 (дизайн).
+
+---
+
+## Sprint 4 — Frontend tech-debt (вливается в Phase 8 v1.0)
 
 - [ ] SDK миграция `@tma.js/sdk-react` → `@telegram-apps/sdk-react@^3.3+` (после research'a v3.3 API; см. post-mortem в CLAUDE.local.md)
 - [ ] `tsc --noEmit` снова в `build` script (типы выровнены)
