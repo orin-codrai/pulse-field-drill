@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user
+from app.auth.deps import current_user, registered_user
 from app.db.session import get_session
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.workspace import WorkspaceCreate, WorkspaceOut, WorkspaceSwitch
@@ -28,7 +28,7 @@ async def list_workspaces(
 @router.post("", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
 async def create_shared_workspace(
     body: WorkspaceCreate,
-    user: User = Depends(current_user),
+    user: User = Depends(registered_user),  # PIN-E: display_name виден партнёру
     session: AsyncSession = Depends(get_session),
 ) -> Workspace:
     """Создать shared workspace. Юзер автоматически добавляется как owner.
@@ -37,9 +37,9 @@ async def create_shared_workspace(
     (`ensure_user_provisioned`). Этот endpoint ВСЕГДА kind='shared' —
     нет пути юзеру создать второй personal.
 
-    Registration enforce: endpoint должен быть behind `registered_user`
-    в 7.D. Сейчас (до 7.D) использует current_user; будет обновлён
-    одновременно с deploy auth/deps активного_user/registered_user.
+    P7 PIN-E: registered_user dependency — display_name отображается
+    партнёру в invite preview и audit history. Без регистрации → 412
+    (frontend ловит и редиректит на /register).
     """
     ws = Workspace(name=body.name, kind="shared")
     session.add(ws)

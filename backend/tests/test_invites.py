@@ -33,19 +33,26 @@ async def _make_user_with_shared(db_session, tg_id: int, name: str = "A"):
     return user, ws
 
 
+async def _register_user_inline(db_session, user, name="Reg"):
+    """Helper: проставить display_name/consent_at для sharing-операций."""
+    user.display_name = name
+    user.consent_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+
 @pytest_asyncio.fixture
-async def setup_shared(app_client, provisioned_user, auth_header, db_session):
-    """provisioned_user (tg_id=12345) делает себе shared workspace и
-    становится в нём active."""
+async def setup_shared(app_client, registered_user, auth_header, db_session):
+    """registered_user (display_name+consent_at) делает себе shared workspace
+    и становится в нём active. Используется во всех sharing-тестах."""
     ws = Workspace(name="Семейный", kind="shared")
     db_session.add(ws)
     await db_session.flush()
     db_session.add(
         WorkspaceMember(
-            workspace_id=ws.id, user_id=provisioned_user.id, role="owner"
+            workspace_id=ws.id, user_id=registered_user.id, role="owner"
         )
     )
-    provisioned_user.active_workspace_id = ws.id
+    registered_user.active_workspace_id = ws.id
     await db_session.commit()
     return ws
 
@@ -80,10 +87,10 @@ async def test_post_invite_url_mismatch_403(
 
 
 async def test_post_invite_personal_403(
-    app_client: AsyncClient, auth_header, provisioned_user
+    app_client: AsyncClient, auth_header, registered_user
 ):
-    """provisioned_user активен в своём personal → POST invite → 403."""
-    personal_id = provisioned_user.active_workspace_id
+    """registered_user активен в своём personal → POST invite → 403 (kind!=shared)."""
+    personal_id = registered_user.active_workspace_id
     r = await app_client.post(
         f"/api/workspaces/{personal_id}/invites", headers=auth_header
     )
@@ -164,7 +171,8 @@ async def test_get_preview(
     assert body["workspace_name"] == "Семейный"
     assert body["workspace_kind"] == "shared"
     assert body["status"] == "pending"
-    assert body["inviter_display_name"] == "Orrin"  # first_name fallback
+    # registered_user fixture ставит display_name → берём его.
+    assert body["inviter_display_name"] == "Orrin Registered"
 
 
 async def test_get_preview_not_found(
@@ -187,7 +195,7 @@ async def test_post_accept_happy(
     bob = await ensure_user_provisioned(
         db_session, TelegramUser(id=83001, first_name="Bob")
     )
-    await db_session.commit()
+    await _register_user_inline(db_session, bob, name="Bob R")
     bob_init = sign_init_data({"id": 83001, "first_name": "Bob"})
     bob_headers = {"Authorization": f"tma {bob_init}"}
 
@@ -241,7 +249,7 @@ async def test_post_accept_expired_410(
     bob = await ensure_user_provisioned(
         db_session, TelegramUser(id=83100, first_name="Bob")
     )
-    await db_session.commit()
+    await _register_user_inline(db_session, bob, name="Bob")
     bob_init = sign_init_data({"id": 83100, "first_name": "Bob"})
     r = await app_client.post(
         f"/api/invites/{token}/accept",
@@ -261,7 +269,7 @@ async def test_post_accept_cap_workspace_409(
     bob = await ensure_user_provisioned(
         db_session, TelegramUser(id=83200, first_name="Bob")
     )
-    await db_session.commit()
+    await _register_user_inline(db_session, bob, name="Bob")
     bob_init = sign_init_data({"id": 83200, "first_name": "Bob"})
     await app_client.post(
         f"/api/invites/{inv1.json()['token']}/accept",
@@ -275,7 +283,7 @@ async def test_post_accept_cap_workspace_409(
     charlie = await ensure_user_provisioned(
         db_session, TelegramUser(id=83201, first_name="Charlie")
     )
-    await db_session.commit()
+    await _register_user_inline(db_session, charlie, name="Charlie")
     charlie_init = sign_init_data({"id": 83201, "first_name": "Charlie"})
     r = await app_client.post(
         f"/api/invites/{inv2.json()['token']}/accept",
@@ -286,18 +294,14 @@ async def test_post_accept_cap_workspace_409(
 
 
 async def test_post_accept_cap_per_user_409(
-    app_client: AsyncClient, auth_header, provisioned_user, db_session
+    app_client: AsyncClient, auth_header, registered_user, db_session
 ):
-    """PIN-N cap-3 shared-per-user.
-
-    Bob уже член 3 shared workspace'ов (прямой DB insert). Затем 4-й shared
-    с pending invite → bob accept'ит → 409 user_cap_reached.
-    """
+    """PIN-N cap-3 shared-per-user."""
     bob_tg = 83300
     bob = await ensure_user_provisioned(
         db_session, TelegramUser(id=bob_tg, first_name="Bob")
     )
-    await db_session.commit()
+    await _register_user_inline(db_session, bob, name="Bob")
     bob_init = sign_init_data({"id": bob_tg, "first_name": "Bob"})
     bob_headers = {"Authorization": f"tma {bob_init}"}
 
@@ -317,11 +321,11 @@ async def test_post_accept_cap_per_user_409(
     await db_session.flush()
     db_session.add(
         WorkspaceMember(
-            workspace_id=ws4.id, user_id=provisioned_user.id, role="owner"
+            workspace_id=ws4.id, user_id=registered_user.id, role="owner"
         )
     )
     from app.services.invites import create_invite
-    inv = await create_invite(db_session, workspace=ws4, actor=provisioned_user)
+    inv = await create_invite(db_session, workspace=ws4, actor=registered_user)
     await db_session.commit()
 
     r = await app_client.post(

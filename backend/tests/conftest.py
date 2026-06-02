@@ -233,6 +233,19 @@ async def workspace(db_session, provisioned_user):
     return await db_session.get(Workspace, provisioned_user.active_workspace_id)
 
 
+@pytest_asyncio.fixture
+async def registered_user(db_session, provisioned_user):
+    """Юзер прошёл /me/register — display_name + consent_at заполнены.
+    Нужен для sharing-операций (POST /workspaces, /invites, /accept) после
+    P7.D: `registered_user` dependency блокирует 412 без profile."""
+    from datetime import datetime, timezone
+
+    provisioned_user.display_name = "Orrin Registered"
+    provisioned_user.consent_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    return provisioned_user
+
+
 @pytest.fixture
 def auth_header(valid_init_data) -> dict[str, str]:
     return {"Authorization": f"tma {valid_init_data}"}

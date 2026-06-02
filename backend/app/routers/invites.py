@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user, current_workspace
+from app.auth.deps import current_user, current_workspace, registered_user
 from app.db.session import get_session
 from app.models import User, Workspace, WorkspaceInvite
 from app.schemas.invite import InviteOut, InvitePreview
@@ -41,7 +41,7 @@ router = APIRouter(tags=["invites"])
 async def create_workspace_invite(
     workspace_id: int,
     ws: Workspace = Depends(current_workspace),
-    user: User = Depends(current_user),
+    user: User = Depends(registered_user),  # PIN-E
     session: AsyncSession = Depends(get_session),
 ) -> WorkspaceInvite:
     if workspace_id != ws.id:
@@ -164,7 +164,7 @@ async def get_invite_preview(
 @router.post("/invites/{token}/accept", response_model=InviteOut)
 async def accept_invite_endpoint(
     token: str,
-    user: User = Depends(current_user),
+    user: User = Depends(registered_user),  # PIN-E: имя видно партнёру в audit
     session: AsyncSession = Depends(get_session),
 ) -> WorkspaceInvite:
     try:
