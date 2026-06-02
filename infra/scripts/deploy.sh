@@ -15,11 +15,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SSH_HOST="${PULSE_SSH_HOST:-pulse-drill}"
+SKIP_SMOKE="${SKIP_MIGRATE_SMOKE:-0}"
 
 cd "$REPO_ROOT"
 
 echo "== sync .env to VPS =="
 "$SCRIPT_DIR/sync-env.sh"
+
+if [ "$SKIP_SMOKE" = "0" ]; then
+    echo ""
+    echo "== migrate smoke on db copy =="
+    # Бэкап + копия prod-БД + alembic upgrade head на копии + ассерты на
+    # backfill. Падает — abort до боевой накатки. Бэкап остаётся на VPS как
+    # rollback-point. Если миграций в деплое нет (фронт-only) — пропустить
+    # через SKIP_MIGRATE_SMOKE=1.
+    "$SCRIPT_DIR/migrate-smoke.sh"
+else
+    echo "(skipping migrate smoke: SKIP_MIGRATE_SMOKE=1)"
+fi
 
 echo ""
 echo "== npm run build (frontend) =="
