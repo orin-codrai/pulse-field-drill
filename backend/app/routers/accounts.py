@@ -12,6 +12,7 @@ from app.schemas.account import (
     AccountOut,
     AccountUpdate,
 )
+from app.services.audit_log import log_action
 from app.services.balances import all_balances
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -47,6 +48,18 @@ async def create_account(
     )
     session.add(acc)
     try:
+        # flush триггерит INSERT → unique violation на accounts_ws_name_uq
+        # бросается ЗДЕСЬ; try должен охватить flush + log_action.
+        await session.flush()
+        await log_action(
+            session,
+            workspace_id=ws.id,
+            actor=user,
+            entity_type="account",
+            entity_id=acc.id,
+            action="create",
+            entity=acc,
+        )
         await session.commit()
     except IntegrityError as e:
         await session.rollback()
@@ -81,6 +94,15 @@ async def update_account(
     for field, value in updates.items():
         setattr(acc, field, value)
 
+    await log_action(
+        session,
+        workspace_id=ws.id,
+        actor=user,
+        entity_type="account",
+        entity_id=acc.id,
+        action="update",
+        entity=acc,
+    )
     try:
         await session.commit()
     except IntegrityError as e:

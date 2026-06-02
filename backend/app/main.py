@@ -2,10 +2,12 @@ from fastapi import FastAPI
 
 from app.routers import (
     accounts,
+    audit,
     budgets,
     categories,
     envelopes,
     forecast,
+    invites,
     me,
     planned,
     reports,
@@ -25,3 +27,5 @@ app.include_router(reports.router, prefix="/api")
 app.include_router(planned.router, prefix="/api")
 app.include_router(envelopes.router, prefix="/api")
 app.include_router(forecast.router, prefix="/api")
+app.include_router(invites.router, prefix="/api")
+app.include_router(audit.router, prefix="/api")

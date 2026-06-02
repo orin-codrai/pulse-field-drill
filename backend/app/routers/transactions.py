@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import current_user, current_workspace
 from app.db.session import get_session
 from app.models import Transaction, User, Workspace
+from app.services.audit_log import log_action
 from app.services.envelopes import skim_on_income
 from app.services.resolvers import resolve_account, resolve_category
 from app.schemas.transaction import (
@@ -68,17 +69,34 @@ async def create_transaction(
     if body.category_id is not None:
         await _validate_category_ref(session, body.category_id, ws.id)
 
-    tx = Transaction(workspace_id=ws.id, **body.model_dump(exclude_none=True))
+    tx = Transaction(
+        workspace_id=ws.id,
+        created_by_user_id=user.id,
+        **body.model_dump(exclude_none=True),
+    )
     session.add(tx)
 
-    # Auto-skim для активных конвертов при подтверждении дохода. В той же
-    # session: либо tx+entries уходят одной atomic-транзакцией, либо ни one
-    # (commit ниже). adjustment с to_account_id растит баланс, но НЕ доход
-    # (MF4 ADR-0007) — skim_on_income raise'нет на любом non-income.
-    if body.kind == "income":
-        await skim_on_income(session, tx, actor_user_id=user.id)
-
     try:
+        # Auto-skim для активных конвертов при подтверждении дохода. В той же
+        # session: либо tx+entries уходят одной atomic-транзакцией, либо ни one
+        # (commit ниже). adjustment с to_account_id растит баланс, но НЕ доход
+        # (MF4 ADR-0007) — skim_on_income raise'нет на любом non-income.
+        if body.kind == "income":
+            await skim_on_income(session, tx, actor_user_id=user.id)
+
+        # Audit: log_action нужен tx.id → flush до log + до commit.
+        # flush триггерит INSERT → CHECK/FK violations бросаются ЗДЕСЬ,
+        # не на commit'е — поэтому try должен охватить и flush, и log_action.
+        await session.flush()
+        await log_action(
+            session,
+            workspace_id=ws.id,
+            actor=user,
+            entity_type="transaction",
+            entity_id=tx.id,
+            action="create",
+            entity=tx,
+        )
         await session.commit()
     except IntegrityError as e:
         await session.rollback()
@@ -179,6 +197,15 @@ async def update_transaction(
     updates = body.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(tx, field, value)
+    await log_action(
+        session,
+        workspace_id=ws.id,
+        actor=user,
+        entity_type="transaction",
+        entity_id=tx.id,
+        action="update",
+        entity=tx,
+    )
     await session.commit()
     await session.refresh(tx)
     return tx
@@ -209,5 +236,15 @@ async def delete_transaction(
             "cannot delete transaction linked to a plan; "
             "delete the plan first (or archive it)",
         )
+    # Audit ПЕРЕД session.delete(): сериализатор читает поля сущности.
+    await log_action(
+        session,
+        workspace_id=ws.id,
+        actor=user,
+        entity_type="transaction",
+        entity_id=tx.id,
+        action="delete",
+        entity=tx,
+    )
     await session.delete(tx)
     await session.commit()
