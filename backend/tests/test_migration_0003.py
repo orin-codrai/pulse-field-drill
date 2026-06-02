@@ -52,9 +52,9 @@ class TestMigration0003Smoke:
     async def test_upgrade_to_head_succeeds_on_empty_db(self):
         await _recreate_db()
         cfg = _alembic_cfg()
-        # asyncio.to_thread: command.* — sync, а env.py внутри запускает
-        # asyncio.run() для async-движка. Из sync thread это безопасно.
-        await asyncio.to_thread(command.upgrade, cfg, "head")
+        # Поднимаем до 0003 явно — будущие миграции (0004+) могут изменить
+        # колонки/таблицы, на которые опираются assertion'ы.
+        await asyncio.to_thread(command.upgrade, cfg, "0003_workspaces_rekey")
 
         # Проверяем что схема 0003-state: workspaces существует, на 6 таблицах
         # workspace_id есть, user_id колонок нет, системные категории видны.

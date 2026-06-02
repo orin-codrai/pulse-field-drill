@@ -21,48 +21,6 @@ class AccountBalance:
     balance_minor: int
 
 
-async def account_balance(session: AsyncSession, account_id: int) -> int:
-    """Баланс одного счёта через ту же CASE/JOIN агрегацию, что и all_balances.
-
-    Используется goals progress (linked_account_id) — там нужен один баланс,
-    а не все. Дублирует SQL форму из all_balances, но без user-filter (caller
-    отвечает за проверку ownership).
-    """
-    in_amount = case(
-        (
-            (Transaction.to_account_id == account_id)
-            & Transaction.kind.in_(("income", "transfer", "adjustment")),
-            Transaction.amount_minor,
-        ),
-        else_=0,
-    )
-    out_amount = case(
-        (
-            (Transaction.from_account_id == account_id)
-            & Transaction.kind.in_(("expense", "transfer", "adjustment")),
-            Transaction.amount_minor,
-        ),
-        else_=0,
-    )
-    stmt = (
-        select(
-            Account.initial_balance_minor
-            + func.coalesce(func.sum(in_amount), 0)
-            - func.coalesce(func.sum(out_amount), 0)
-        )
-        .select_from(Account)
-        .outerjoin(
-            Transaction,
-            (Transaction.from_account_id == Account.id)
-            | (Transaction.to_account_id == Account.id),
-        )
-        .where(Account.id == account_id)
-        .group_by(Account.initial_balance_minor)
-    )
-    result = await session.scalar(stmt)
-    return int(result) if result is not None else 0
-
-
 async def all_balances(session: AsyncSession, workspace_id: int) -> list[AccountBalance]:
     """Балансы всех accounts workspace. Один SQL, без N+1.
 

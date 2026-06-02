@@ -3,7 +3,8 @@
 from app.models.account import Account
 from app.models.budget import Budget
 from app.models.category import Category
-from app.models.goal import Goal
+from app.models.envelope import Envelope
+from app.models.envelope_entry import EnvelopeEntry
 from app.models.planned_operation import PlannedOperation
 from app.models.receipt import Receipt
 from app.models.transaction import Transaction
@@ -15,7 +16,8 @@ __all__ = [
     "Account",
     "Budget",
     "Category",
-    "Goal",
+    "Envelope",
+    "EnvelopeEntry",
     "PlannedOperation",
     "Receipt",
     "Transaction",

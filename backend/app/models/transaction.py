@@ -49,8 +49,12 @@ class Transaction(Base):
     # Источник tx — план + конкретное вхождение. Обе колонки NULL для tx,
     # созданных не из плана. Unique partial index `transactions_planned_uq`
     # ниже отбивает двойной confirm одного вхождения (ADR-0008).
+    # C13-1: ondelete='RESTRICT' (после миграции 0005 шаг 9) — симметрично
+    # MF11-2 (DELETE tx с planned_operation_id IS NOT NULL → 409). DELETE
+    # plan с confirmed tx → IntegrityError → 409 в delete_planned. Юзер
+    # вынужден архивировать, не удалять — consistency с history-immutable.
     planned_operation_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("planned_operations.id", ondelete="SET NULL")
+        BigInteger, ForeignKey("planned_operations.id", ondelete="RESTRICT")
     )
     occurrence_date: Mapped[date | None] = mapped_column(Date)
     occurred_at: Mapped[datetime] = mapped_column(

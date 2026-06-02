@@ -46,7 +46,9 @@ class TestMigration0004Smoke:
     async def test_upgrade_to_head_creates_planned_and_extensions(self):
         await _recreate_db()
         cfg = _alembic_cfg()
-        await asyncio.to_thread(command.upgrade, cfg, "head")
+        # Поднимаем до 0004 явно (не head) — будущие миграции (0005+) могут
+        # переименовать/удалить колонки, на которые опираются assertion'ы.
+        await asyncio.to_thread(command.upgrade, cfg, "0004_planned_operations")
 
         engine = create_async_engine(MIGRATION_URL)
         try:
