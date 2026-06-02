@@ -2,12 +2,17 @@ import type { ComponentType } from 'react';
 
 import { AddEnvelopePage } from '@/pages/AddEnvelopePage/AddEnvelopePage';
 import { AddPlanPage } from '@/pages/AddPlanPage/AddPlanPage';
+import { AddSharedWorkspacePage } from '@/pages/AddSharedWorkspacePage/AddSharedWorkspacePage';
 import { AddTransactionPage } from '@/pages/AddTransactionPage/AddTransactionPage';
+import { AuditHistoryPage } from '@/pages/AuditHistoryPage/AuditHistoryPage';
 import { BalancesPage } from '@/pages/BalancesPage/BalancesPage';
 import { EnvelopeDetailPage } from '@/pages/EnvelopeDetailPage/EnvelopeDetailPage';
 import { EnvelopesPage } from '@/pages/EnvelopesPage/EnvelopesPage';
+import { InviteAcceptPage } from '@/pages/InviteAcceptPage/InviteAcceptPage';
 import { MenuPage } from '@/pages/MenuPage/MenuPage';
 import { PlanningPage } from '@/pages/PlanningPage/PlanningPage';
+import { RegistrationPage } from '@/pages/RegistrationPage/RegistrationPage';
+import { RestorePage } from '@/pages/RestorePage/RestorePage';
 import { TransactionsPage } from '@/pages/TransactionsPage/TransactionsPage';
 
 interface Route {
@@ -25,4 +30,10 @@ export const routes: Route[] = [
   { path: '/envelopes', Component: EnvelopesPage },
   { path: '/envelopes/add', Component: AddEnvelopePage },
   { path: '/envelopes/:envelopeId', Component: EnvelopeDetailPage },
+  // P7:
+  { path: '/register', Component: RegistrationPage },
+  { path: '/restore', Component: RestorePage },
+  { path: '/invites/:token/accept', Component: InviteAcceptPage },
+  { path: '/workspaces/new', Component: AddSharedWorkspacePage },
+  { path: '/audit', Component: AuditHistoryPage },
 ];

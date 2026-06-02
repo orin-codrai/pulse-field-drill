@@ -63,6 +63,17 @@ export async function init(options: {
   mainButton.mount.ifAvailable();
   initData.restore();
 
+  // P7: read start_param для invite deep-link (формат: `invite_<token>`).
+  // MF14-8 + C15-1: чистим stale token если открыты не через invite-link,
+  // иначе sessionStorage из предыдущей сессии вернёт юзера обратно на
+  // /invites/.../accept loop'ом.
+  const startParam = retrieveLaunchParams().tgWebAppStartParam;
+  if (startParam?.startsWith('invite_')) {
+    sessionStorage.setItem('pendingInviteToken', startParam.slice('invite_'.length));
+  } else {
+    sessionStorage.removeItem('pendingInviteToken');
+  }
+
   if (miniApp.mount.isAvailable()) {
     themeParams.mount();
     miniApp.mount();

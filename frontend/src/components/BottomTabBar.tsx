@@ -16,12 +16,19 @@ const MODAL_PATHS = new Set([
   '/plan/add',
   '/envelopes',
   '/envelopes/add',
+  // P7 full-page без TabBar:
+  '/register',
+  '/restore',
+  '/workspaces/new',
+  '/audit',
 ]);
 
 function isModalPath(pathname: string): boolean {
   if (MODAL_PATHS.has(pathname)) return true;
   // /envelopes/{id} (envelope detail) — тоже modal-like.
   if (/^\/envelopes\/\d+$/.test(pathname)) return true;
+  // /invites/{token}/accept (P7) — modal-like.
+  if (/^\/invites\/[^/]+\/accept$/.test(pathname)) return true;
   return false;
 }
 

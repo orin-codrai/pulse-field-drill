@@ -21,7 +21,11 @@ export type RefetchKey =
   | 'reports'
   | 'planned'
   | 'forecast'
-  | 'envelopes';
+  | 'envelopes'
+  | 'me'
+  | 'workspaces'
+  | 'invites'
+  | 'audit';
 
 export function bump(key: RefetchKey): void {
   listeners[key]?.forEach((fn) => fn());
