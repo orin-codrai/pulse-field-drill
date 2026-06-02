@@ -5,9 +5,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_workspace
+from app.auth.deps import current_user, current_workspace
 from app.db.session import get_session
-from app.models import Transaction, Workspace
+from app.models import Transaction, User, Workspace
+from app.services.envelopes import skim_on_income
 from app.services.resolvers import resolve_account, resolve_category
 from app.schemas.transaction import (
     TransactionCreate,
@@ -51,6 +52,7 @@ async def _validate_category_ref(
 async def create_transaction(
     body: TransactionCreate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Transaction:
     # Application-level FK ownership / archived-checks — отвечаем 422 с
@@ -68,6 +70,14 @@ async def create_transaction(
 
     tx = Transaction(workspace_id=ws.id, **body.model_dump(exclude_none=True))
     session.add(tx)
+
+    # Auto-skim для активных конвертов при подтверждении дохода. В той же
+    # session: либо tx+entries уходят одной atomic-транзакцией, либо ни one
+    # (commit ниже). adjustment с to_account_id растит баланс, но НЕ доход
+    # (MF4 ADR-0007) — skim_on_income raise'нет на любом non-income.
+    if body.kind == "income":
+        await skim_on_income(session, tx, actor_user_id=user.id)
+
     try:
         await session.commit()
     except IntegrityError as e:
@@ -84,6 +94,14 @@ async def create_transaction(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "transaction violates a CHECK constraint",
+            ) from e
+        # MF3 pass 11 / C12-2: CHECK/FK violations на entries → 422, не 500.
+        # Любая новая constraint на envelope_entries (включая будущие _uq)
+        # требует расширения этого matcher'a — сейчас покрываем _chk/_fkey.
+        if "envelope_entries_" in msg and ("_chk" in msg or "_fkey" in msg):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "envelope entry constraint violated",
             ) from e
         raise
     await session.refresh(tx)
@@ -178,5 +196,16 @@ async def delete_transaction(
     )
     if tx is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "transaction not found")
+    # MF11-2: DELETE planned-tx → zombie occurrence (CASCADE снимает skim
+    # entries и balance падает, но planned_operations.completed_cycles не
+    # откатывается → план не вернётся в /due, повторный confirm невозможен).
+    # Юзер должен архивировать или удалить план — guard в delete_planned
+    # симметрично (MF12-1: tx.planned_operation_id_fkey ondelete=RESTRICT).
+    if tx.planned_operation_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "cannot delete transaction linked to a plan; "
+            "delete the plan first (or archive it)",
+        )
     await session.delete(tx)
     await session.commit()

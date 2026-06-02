@@ -4,6 +4,7 @@ from app.routers import (
     accounts,
     budgets,
     categories,
+    envelopes,
     forecast,
     me,
     planned,
@@ -22,4 +23,5 @@ app.include_router(transactions.router, prefix="/api")
 app.include_router(budgets.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(planned.router, prefix="/api")
+app.include_router(envelopes.router, prefix="/api")
 app.include_router(forecast.router, prefix="/api")

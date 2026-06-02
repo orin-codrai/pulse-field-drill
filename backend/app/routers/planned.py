@@ -18,9 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_workspace
+from app.auth.deps import current_user, current_workspace
 from app.db.session import get_session
-from app.models import PlannedOperation, Transaction, Workspace
+from app.models import PlannedOperation, Transaction, User, Workspace
 from app.schemas.planned import (
     DuePlannedItem,
     PlannedOperationCreate,
@@ -28,6 +28,7 @@ from app.schemas.planned import (
     PlannedOperationUpdate,
 )
 from app.schemas.transaction import TransactionOut
+from app.services.envelopes import skim_on_income
 from app.services.occurrences import nth_occurrence
 from app.services.resolvers import resolve_account, resolve_category
 
@@ -242,8 +243,10 @@ async def delete_planned(
     ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """FK transactions.planned_operation_id ondelete SET NULL: подтверждённые
-    tx сохраняются, теряют связь с планом."""
+    """FK transactions.planned_operation_id ondelete='RESTRICT' (после
+    миграции 0005 шаг 9, C13-1): DELETE plan с confirmed tx → IntegrityError
+    → 409 (MF12-1). Симметрично с MF11-2 (DELETE tx из плана → 409).
+    Юзер архивирует, не удаляет — consistency с history-immutable."""
     op = await session.scalar(
         select(PlannedOperation).where(
             PlannedOperation.id == op_id, PlannedOperation.workspace_id == ws.id
@@ -251,8 +254,19 @@ async def delete_planned(
     )
     if op is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "planned op not found")
-    await session.delete(op)
-    await session.commit()
+    try:
+        await session.delete(op)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        msg = str(e.orig)
+        if "transactions_planned_operation_id_fkey" in msg:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "cannot delete plan with confirmed transactions; "
+                "archive plan or delete linked transactions first",
+            ) from e
+        raise
 
 
 # ─── Confirm ─────────────────────────────────────────────────────────────────
@@ -266,6 +280,7 @@ async def delete_planned(
 async def confirm_planned(
     op_id: int,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
     op = await session.scalar(
@@ -335,6 +350,12 @@ async def confirm_planned(
     elif op.recurrence == "once":
         op.status = "done"
 
+    # Auto-skim для plan-подтверждённого income — единый путь с прямым POST tx
+    # (ADR-0007). adjustment kind у плана невозможен (Literal income|expense
+    # в PlannedOperationCreate).
+    if op.kind == "income":
+        await skim_on_income(session, tx, actor_user_id=user.id)
+
     try:
         await session.commit()
     except IntegrityError as e:
@@ -346,6 +367,13 @@ async def confirm_planned(
         if constraint == "transactions_planned_uq":
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "occurrence already confirmed (race)"
+            ) from e
+        # MF3 pass 11 / C12-2: entries CHECK/FK → 422, не 500.
+        msg = str(e.orig)
+        if "envelope_entries_" in msg and ("_chk" in msg or "_fkey" in msg):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "envelope entry constraint violated",
             ) from e
         raise
 
