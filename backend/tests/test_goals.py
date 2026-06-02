@@ -19,10 +19,10 @@ async def setup(app_client, provisioned_user, auth_header):
     cash_id = next(a["id"] for a in accounts if a["name"] == "Наличные")
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
     zarplata = next(
-        c for c in cats if c["name"] == "Зарплата" and c["user_id"] is None
+        c for c in cats if c["name"] == "Зарплата" and c["workspace_id"] is None
     )
     korrektirovka = next(
-        c for c in cats if c["name"] == "Корректировка" and c["user_id"] is None
+        c for c in cats if c["name"] == "Корректировка" and c["workspace_id"] is None
     )
     return {
         "card": card_id,
@@ -104,7 +104,7 @@ async def test_post_with_foreign_linked_account_returns_422(
     from app.models import Account
 
     bob_acc = await db_session.scalar(
-        select(Account.id).where(Account.user_id == user_b.id).limit(1)
+        select(Account.id).where(Account.workspace_id == user_b.active_workspace_id).limit(1)
     )
 
     r = await app_client.post(
@@ -155,7 +155,7 @@ async def test_list_returns_only_own_goals(
     await db_session.commit()
     from app.models import Goal
 
-    bob_goal = Goal(user_id=user_b.id, name="Bob's", target_amount_minor=999)
+    bob_goal = Goal(workspace_id=user_b.active_workspace_id, name="Bob's", target_amount_minor=999)
     db_session.add(bob_goal)
     await db_session.commit()
 
@@ -177,7 +177,7 @@ async def test_patch_other_users_goal_returns_404(
         db_session, TelegramUser(id=33333, first_name="Bob")
     )
     await db_session.commit()
-    bob_goal = Goal(user_id=user_b.id, name="Bob's", target_amount_minor=999)
+    bob_goal = Goal(workspace_id=user_b.active_workspace_id, name="Bob's", target_amount_minor=999)
     db_session.add(bob_goal)
     await db_session.commit()
 
@@ -208,7 +208,7 @@ async def test_delete_happy_and_cross_user_404(
         db_session, TelegramUser(id=22222, first_name="Bob")
     )
     await db_session.commit()
-    bob_goal = Goal(user_id=user_b.id, name="B", target_amount_minor=1)
+    bob_goal = Goal(workspace_id=user_b.active_workspace_id, name="B", target_amount_minor=1)
     db_session.add(bob_goal)
     await db_session.commit()
     r2 = await app_client.delete(f"/api/goals/{bob_goal.id}", headers=auth_header)
@@ -323,7 +323,7 @@ async def test_progress_unlinked_no_zarplata_raises_500(
 
     # Вручную сносим системную «Зарплата» (имитация broken seed).
     await db_session.execute(
-        text("DELETE FROM categories WHERE user_id IS NULL AND name = 'Зарплата'")
+        text("DELETE FROM categories WHERE workspace_id IS NULL AND name = 'Зарплата'")
     )
     await db_session.commit()
 

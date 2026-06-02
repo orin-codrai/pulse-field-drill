@@ -162,7 +162,7 @@ async def test_cross_user_404(
     from app.models import Account
 
     b_account_id = await db_session.scalar(
-        select(Account.id).where(Account.user_id == user_b.id).limit(1)
+        select(Account.id).where(Account.workspace_id == user_b.active_workspace_id).limit(1)
     )
     assert b_account_id is not None
 

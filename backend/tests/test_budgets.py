@@ -17,8 +17,8 @@ from sqlalchemy import select
 @pytest_asyncio.fixture
 async def setup(app_client, provisioned_user, auth_header):
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
-    products = next(c for c in cats if c["name"] == "Продукты" and c["user_id"] is None)
-    transport = next(c for c in cats if c["name"] == "Транспорт" and c["user_id"] is None)
+    products = next(c for c in cats if c["name"] == "Продукты" and c["workspace_id"] is None)
+    transport = next(c for c in cats if c["name"] == "Транспорт" and c["workspace_id"] is None)
     accounts = (await app_client.get("/api/accounts", headers=auth_header)).json()
     card_id = next(a["id"] for a in accounts if a["name"] == "Карта")
     return {
@@ -96,7 +96,7 @@ async def test_post_other_user_category_rejected_422(
         db_session, TelegramUser(id=11111, first_name="Bob")
     )
     await db_session.commit()
-    bob_cat = Category(user_id=user_b.id, name="Bob's", kind="expense")
+    bob_cat = Category(workspace_id=user_b.active_workspace_id, name="Bob's", kind="expense")
     db_session.add(bob_cat)
     await db_session.commit()
 
@@ -313,7 +313,7 @@ async def test_patch_other_users_budget_returns_404(
     )
     await db_session.commit()
     bob_budget = Budget(
-        user_id=user_b.id,
+        workspace_id=user_b.active_workspace_id,
         category_id=setup["products"],  # системная — Bob тоже её видит
         period="month",
         limit_minor=500,

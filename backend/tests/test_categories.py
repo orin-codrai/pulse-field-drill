@@ -19,7 +19,7 @@ async def test_list_includes_system_categories(
     assert r.status_code == 200
     cats = r.json()
     # 18 системных из seed (см. migration 0002).
-    system = [c for c in cats if c["user_id"] is None]
+    system = [c for c in cats if c["workspace_id"] is None]
     assert len(system) == 18
     # Все имена уникальны.
     names = [c["name"] for c in system]
@@ -48,7 +48,7 @@ async def test_post_creates_user_category(
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["name"] == "Хобби"
-    assert body["user_id"] == provisioned_user.id
+    assert body["workspace_id"] == provisioned_user.active_workspace_id
 
 
 async def test_post_duplicate_name_in_user_namespace_returns_409(
@@ -70,7 +70,7 @@ async def test_post_duplicate_name_in_user_namespace_returns_409(
 async def test_post_with_same_name_as_system_is_allowed(
     app_client: AsyncClient, provisioned_user, auth_header
 ):
-    """COALESCE(user_id, 0) отделяет namespaces: системное → 0, юзер → user.id.
+    """COALESCE(workspace_id, 0) отделяет namespaces: системное → 0, юзер → ws.id.
     Юзер вправе создать свою «Зарплату» одновременно с системной."""
     r = await app_client.post(
         "/api/categories",
@@ -145,13 +145,48 @@ async def test_patch_system_category_returns_403(
     app_client: AsyncClient, provisioned_user, auth_header
 ):
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
-    system_cat = next(c for c in cats if c["user_id"] is None)
+    system_cat = next(c for c in cats if c["workspace_id"] is None)
     r = await app_client.patch(
         f"/api/categories/{system_cat['id']}",
         headers=auth_header,
         json={"name": "Hijacked"},
     )
     assert r.status_code == 403
+
+
+async def test_system_categories_global_across_workspaces(
+    app_client: AsyncClient, provisioned_user, auth_header, db_session, valid_user
+):
+    """Системные категории (workspace_id IS NULL) видны юзерам всех workspaces
+    под одними и теми же id'ами — иначе при шеринге workspace'ов категории-FK
+    в transactions разъехались бы. План §Phase 4: «system → workspace_id IS NULL»."""
+    from tests.conftest import sign_init_data
+
+    a_cats = (await app_client.get("/api/categories", headers=auth_header)).json()
+    a_system = sorted(
+        (c["id"], c["name"], c["kind"]) for c in a_cats if c["workspace_id"] is None
+    )
+
+    # Создаём второго юзера и достаём его view.
+    from app.schemas.user import TelegramUser
+    from app.services.user_provisioning import ensure_user_provisioned
+
+    await ensure_user_provisioned(
+        db_session, TelegramUser(id=33333, first_name="Bob")
+    )
+    await db_session.commit()
+    bob_init = sign_init_data({"id": 33333, "first_name": "Bob"})
+    b_cats = (
+        await app_client.get(
+            "/api/categories", headers={"Authorization": f"tma {bob_init}"}
+        )
+    ).json()
+    b_system = sorted(
+        (c["id"], c["name"], c["kind"]) for c in b_cats if c["workspace_id"] is None
+    )
+
+    assert a_system == b_system
+    assert len(a_system) == 18
 
 
 async def test_patch_other_users_category_returns_404(
@@ -169,7 +204,7 @@ async def test_patch_other_users_category_returns_404(
 
     from app.models import Category
 
-    bob_cat = Category(user_id=user_b.id, name="Bob's stuff", kind="expense")
+    bob_cat = Category(workspace_id=user_b.active_workspace_id, name="Bob's stuff", kind="expense")
     db_session.add(bob_cat)
     await db_session.commit()
 

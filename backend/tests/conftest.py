@@ -112,16 +112,16 @@ async def test_engine() -> AsyncIterator:
         # они только в alembic 0001. Воспроизводим вручную:
         await conn.execute(
             text(
-                "CREATE UNIQUE INDEX categories_user_name_uq "
-                "ON categories (COALESCE(user_id, 0), name) "
+                "CREATE UNIQUE INDEX categories_ws_name_uq "
+                "ON categories (COALESCE(workspace_id, 0), name) "
                 "WHERE archived_at IS NULL"
             )
         )
-        await conn.execute(text("DROP INDEX IF EXISTS transactions_user_occurred_idx"))
+        await conn.execute(text("DROP INDEX IF EXISTS transactions_ws_occurred_idx"))
         await conn.execute(
             text(
-                "CREATE INDEX transactions_user_occurred_idx "
-                "ON transactions (user_id, occurred_at DESC)"
+                "CREATE INDEX transactions_ws_occurred_idx "
+                "ON transactions (workspace_id, occurred_at DESC)"
             )
         )
         # Сид 18 системных категорий — копия из alembic 0002.
@@ -130,7 +130,7 @@ async def test_engine() -> AsyncIterator:
         for icon, name, kind in SYSTEM_CATEGORIES:
             await conn.execute(
                 text(
-                    "INSERT INTO categories (user_id, name, kind, icon) "
+                    "INSERT INTO categories (workspace_id, name, kind, icon) "
                     "VALUES (NULL, :name, :kind, :icon)"
                 ),
                 {"name": name, "kind": kind, "icon": icon},
@@ -140,9 +140,18 @@ async def test_engine() -> AsyncIterator:
     await engine.dispose()
 
 
-# Список таблиц, которые TRUNCATE-аются между тестами. Системные категории
-# (`user_id IS NULL`) переживают — это сид-данные.
-USER_TABLES = ["transactions", "receipts", "budgets", "goals", "accounts"]
+# Таблицы, которые TRUNCATE-аются между тестами. Системные категории
+# (`workspace_id IS NULL`) пере-сидятся после (RESTART IDENTITY сбрасывает их id).
+USER_TABLES = [
+    "transactions",
+    "receipts",
+    "budgets",
+    "goals",
+    "accounts",
+    "categories",
+    "workspace_members",
+    "workspaces",
+]
 
 
 @pytest_asyncio.fixture
@@ -157,8 +166,8 @@ async def db_session(test_engine, request) -> AsyncIterator[AsyncSession]:
 
     if not no_rollback:
         async with test_engine.begin() as conn:
-            # CASCADE на users → categories тоже truncate'нутся (FK CASCADE).
-            # Re-seed системных категорий после.
+            # Все данные-таблицы + users, одним TRUNCATE (CASCADE покрывает FK
+            # между ними). categories тоже сносится → re-seed системных ниже.
             await conn.execute(
                 text(f"TRUNCATE {', '.join(USER_TABLES)}, users RESTART IDENTITY CASCADE")
             )
@@ -167,7 +176,7 @@ async def db_session(test_engine, request) -> AsyncIterator[AsyncSession]:
             for icon, name, kind in SYSTEM_CATEGORIES:
                 await conn.execute(
                     text(
-                        "INSERT INTO categories (user_id, name, kind, icon) "
+                        "INSERT INTO categories (workspace_id, name, kind, icon) "
                         "VALUES (NULL, :name, :kind, :icon)"
                     ),
                     {"name": name, "kind": kind, "icon": icon},
@@ -209,6 +218,15 @@ async def provisioned_user(db_session, valid_user):
     user = await ensure_user_provisioned(db_session, tg)
     await db_session.commit()
     return user
+
+
+@pytest_asyncio.fixture
+async def workspace(db_session, provisioned_user):
+    """Personal workspace провиженного юзера — owner-scope для данных в тестах.
+    Тесты создают Account/Transaction/etc. с workspace_id=workspace.id."""
+    from app.models import Workspace
+
+    return await db_session.get(Workspace, provisioned_user.active_workspace_id)
 
 
 @pytest.fixture

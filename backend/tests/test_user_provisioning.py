@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Account, User
+from app.models import Account, User, Workspace
 from app.schemas.user import TelegramUser
 from app.services.user_provisioning import ensure_user_provisioned
 
@@ -41,7 +41,9 @@ async def test_first_call_creates_user_and_default_accounts(db_session: AsyncSes
 
     names = (
         await db_session.execute(
-            select(Account.name).where(Account.user_id == user.id).order_by(Account.id)
+            select(Account.name)
+            .where(Account.workspace_id == user.active_workspace_id)
+            .order_by(Account.id)
         )
     ).scalars().all()
     assert list(names) == ["Карта", "Наличные"]
@@ -66,7 +68,9 @@ async def test_second_call_updates_profile_no_duplicate_accounts(
     assert users[0].is_premium is True
 
     n_accounts = await db_session.scalar(
-        select(func.count(Account.id)).where(Account.user_id == users[0].id)
+        select(func.count(Account.id)).where(
+            Account.workspace_id == users[0].active_workspace_id
+        )
     )
     assert n_accounts == 2
 
@@ -88,10 +92,10 @@ async def test_on_conflict_with_partial_index_works(db_session: AsyncSession):
 
 @pytest.mark.no_rollback
 class TestConcurrency:
-    """Параллельные /api/me от одного tg_id → ровно 2 accounts.
+    """Параллельные /api/me от одного tg_id → ровно 1 user, 1 workspace, 2 accounts.
 
-    Защита: partial unique index `accounts_user_name_uq` + ON CONFLICT DO NOTHING.
-    Без него race window между SELECT count и INSERT дал бы 4 строки.
+    Защита: advisory-lock по tg_id сериализует first-touch (один personal
+    workspace), а `accounts_ws_name_uq` + ON CONFLICT DO NOTHING страхует счета.
     """
 
     async def test_two_concurrent_provisions_give_exactly_two_accounts(
@@ -103,7 +107,8 @@ class TestConcurrency:
         async with test_engine.begin() as conn:
             await conn.execute(
                 text(
-                    "TRUNCATE transactions, receipts, budgets, goals, accounts, users "
+                    "TRUNCATE transactions, receipts, budgets, goals, accounts, "
+                    "categories, workspace_members, workspaces, users "
                     "RESTART IDENTITY CASCADE"
                 )
             )
@@ -120,8 +125,8 @@ class TestConcurrency:
 
         async with SessionLocal() as s:
             n_users = await s.scalar(select(func.count(User.id)))
-            n_accounts = await s.scalar(
-                select(func.count(Account.id)).join(User, Account.user_id == User.id)
-            )
+            n_workspaces = await s.scalar(select(func.count(Workspace.id)))
+            n_accounts = await s.scalar(select(func.count(Account.id)))
         assert n_users == 1
+        assert n_workspaces == 1
         assert n_accounts == 2

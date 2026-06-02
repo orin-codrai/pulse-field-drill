@@ -14,7 +14,7 @@ async def setup(app_client, provisioned_user, auth_header):
     card_id = next(a["id"] for a in accounts if a["name"] == "Карта")
     cash_id = next(a["id"] for a in accounts if a["name"] == "Наличные")
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
-    expense_cat = next(c["id"] for c in cats if c["kind"] == "expense" and c["user_id"] is None)
+    expense_cat = next(c["id"] for c in cats if c["kind"] == "expense" and c["workspace_id"] is None)
     income_cat = next(c["id"] for c in cats if c["kind"] == "income")
     adjust_cat = next(c["id"] for c in cats if c["kind"] == "both")
     return {

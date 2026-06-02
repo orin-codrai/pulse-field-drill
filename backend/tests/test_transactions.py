@@ -17,7 +17,7 @@ async def user_setup(app_client, provisioned_user, auth_header, db_session):
     cash_id = next(a["id"] for a in accounts if a["name"] == "Наличные")
 
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
-    expense_cat = next(c for c in cats if c["kind"] == "expense" and c["user_id"] is None)
+    expense_cat = next(c for c in cats if c["kind"] == "expense" and c["workspace_id"] is None)
     income_cat = next(c for c in cats if c["kind"] == "income")
     adjust_cat = next(c for c in cats if c["kind"] == "both")
 
@@ -198,7 +198,9 @@ async def test_post_with_foreign_account_returns_422(
     from app.models import Account
 
     bob_acc = await db_session.scalar(
-        select(Account.id).where(Account.user_id == user_b.id).limit(1)
+        select(Account.id)
+        .where(Account.workspace_id == user_b.active_workspace_id)
+        .limit(1)
     )
 
     r = await app_client.post(
@@ -382,11 +384,11 @@ async def test_cross_user_404(
     from sqlalchemy import select
 
     bob_card = await db_session.scalar(
-        select(Account).where(Account.user_id == user_b.id).limit(1)
+        select(Account).where(Account.workspace_id == user_b.active_workspace_id).limit(1)
     )
     # Создать одну expense у Боба через любую системную expense-категорию.
     bob_tx = Transaction(
-        user_id=user_b.id,
+        workspace_id=user_b.active_workspace_id,
         kind="expense",
         amount_minor=100,
         from_account_id=bob_card.id,

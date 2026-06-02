@@ -9,9 +9,9 @@ async def setup(app_client, provisioned_user, auth_header):
     accounts = (await app_client.get("/api/accounts", headers=auth_header)).json()
     card_id = next(a["id"] for a in accounts if a["name"] == "Карта")
     cats = (await app_client.get("/api/categories", headers=auth_header)).json()
-    products = next(c["id"] for c in cats if c["name"] == "Продукты" and c["user_id"] is None)
-    transport = next(c["id"] for c in cats if c["name"] == "Транспорт" and c["user_id"] is None)
-    zarplata = next(c["id"] for c in cats if c["name"] == "Зарплата" and c["user_id"] is None)
+    products = next(c["id"] for c in cats if c["name"] == "Продукты" and c["workspace_id"] is None)
+    transport = next(c["id"] for c in cats if c["name"] == "Транспорт" and c["workspace_id"] is None)
+    zarplata = next(c["id"] for c in cats if c["name"] == "Зарплата" and c["workspace_id"] is None)
     return {
         "card": card_id,
         "products": products,
