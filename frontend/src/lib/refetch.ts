@@ -12,7 +12,16 @@ import { useEffect, useState } from 'react';
 
 const listeners: Record<string, Set<() => void>> = {};
 
-export type RefetchKey = 'balances' | 'transactions' | 'accounts' | 'categories' | 'goals' | 'budgets' | 'reports';
+export type RefetchKey =
+  | 'balances'
+  | 'transactions'
+  | 'accounts'
+  | 'categories'
+  | 'goals'
+  | 'budgets'
+  | 'reports'
+  | 'planned'
+  | 'forecast';
 
 export function bump(key: RefetchKey): void {
   listeners[key]?.forEach((fn) => fn());
