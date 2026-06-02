@@ -1,13 +1,14 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_workspace
 from app.db.session import get_session
 from app.models import Budget, Category, Transaction, Workspace
+from app.services.resolvers import resolve_category
 from app.schemas.budget import (
     BudgetCreate,
     BudgetOut,
@@ -24,12 +25,7 @@ async def _validate_category(
     """Mirror _validate_category_ref из transactions.py.
     Системная (workspace_id IS NULL) или принадлежащая workspace. Не archived.
     """
-    cat = await session.scalar(
-        select(Category).where(
-            Category.id == category_id,
-            or_(Category.workspace_id.is_(None), Category.workspace_id == workspace_id),
-        )
-    )
+    cat = await resolve_category(session, category_id, workspace_id)
     if cat is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "category_id: not found"

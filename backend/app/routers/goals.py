@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_workspace
 from app.db.session import get_session
-from app.models import Account, Category, Goal, Transaction, Workspace
+from app.models import Category, Goal, Transaction, Workspace
+from app.services.resolvers import resolve_account
 from app.schemas.goal import GoalCreate, GoalOut, GoalProgress, GoalUpdate
 from app.services.balances import account_balance
 
@@ -14,24 +15,21 @@ router = APIRouter(prefix="/goals", tags=["goals"])
 
 
 async def _validate_linked_account(
-    session: AsyncSession, account_id: int, workspace_id: int
+    session: AsyncSession, account_id: int, workspace_id: int, field: str
 ) -> None:
     """linked_account_id должен принадлежать workspace и быть активным.
-    Mirror _validate_account_ref из transactions.py.
+    Mirror _validate_account_ref из transactions.py. Сигнатура с `field`
+    выровнена с template'ом (C10-1 plan-reviewer pass 10).
     """
-    acc = await session.scalar(
-        select(Account).where(
-            Account.id == account_id, Account.workspace_id == workspace_id
-        )
-    )
+    acc = await resolve_account(session, account_id, workspace_id)
     if acc is None:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "linked_account_id: not found"
+            status.HTTP_422_UNPROCESSABLE_CONTENT, f"{field}: not found"
         )
     if acc.archived_at is not None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "linked_account_id: account is archived",
+            f"{field}: account is archived",
         )
 
 
@@ -51,7 +49,9 @@ async def create_goal(
     session: AsyncSession = Depends(get_session),
 ) -> Goal:
     if body.linked_account_id is not None:
-        await _validate_linked_account(session, body.linked_account_id, ws.id)
+        await _validate_linked_account(
+            session, body.linked_account_id, ws.id, "linked_account_id"
+        )
     goal = Goal(workspace_id=ws.id, **body.model_dump(exclude_none=True))
     session.add(goal)
     await session.commit()
@@ -74,7 +74,9 @@ async def update_goal(
 
     updates = body.model_dump(exclude_unset=True)
     if "linked_account_id" in updates and updates["linked_account_id"] is not None:
-        await _validate_linked_account(session, updates["linked_account_id"], ws.id)
+        await _validate_linked_account(
+            session, updates["linked_account_id"], ws.id, "linked_account_id"
+        )
 
     for field, value in updates.items():
         setattr(goal, field, value)

@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_workspace
 from app.db.session import get_session
-from app.models import Account, Category, Transaction, Workspace
+from app.models import Transaction, Workspace
+from app.services.resolvers import resolve_account, resolve_category
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionKind,
@@ -22,11 +23,7 @@ async def _validate_account_ref(
     session: AsyncSession, account_id: int, workspace_id: int, field: str
 ) -> None:
     """Account FK должен указывать на active (не archived) account workspace."""
-    acc = await session.scalar(
-        select(Account).where(
-            Account.id == account_id, Account.workspace_id == workspace_id
-        )
-    )
+    acc = await resolve_account(session, account_id, workspace_id)
     if acc is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{field}: not found")
     if acc.archived_at is not None:
@@ -39,12 +36,7 @@ async def _validate_category_ref(
     session: AsyncSession, category_id: int, workspace_id: int
 ) -> None:
     """Category FK: системная (workspace_id IS NULL) или принадлежащая workspace."""
-    cat = await session.scalar(
-        select(Category).where(
-            Category.id == category_id,
-            or_(Category.workspace_id.is_(None), Category.workspace_id == workspace_id),
-        )
-    )
+    cat = await resolve_category(session, category_id, workspace_id)
     if cat is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "category_id: not found"
