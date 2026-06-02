@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { useBalances } from '@/hooks/useBalances';
+import { useForecast } from '@/hooks/useForecast';
 import { useMainButton } from '@/hooks/useMainButton';
 import { formatRub } from '@/lib/format';
 
@@ -18,6 +19,7 @@ const ACCOUNT_ICON: Record<string, string> = {
 export const BalancesPage: FC = () => {
   const navigate = useNavigate();
   const { data, loading, error } = useBalances();
+  const { data: forecast } = useForecast();
 
   useMainButton({
     text: '+ Транзакция',
@@ -25,18 +27,19 @@ export const BalancesPage: FC = () => {
   });
 
   const total = data?.reduce((acc, a) => acc + a.balance_minor, 0) ?? 0;
+  const reserved = forecast?.reserved ?? 0;
+  const available = total - reserved;
 
   return (
     <Page back={false}>
       <List>
-        <Section header="Общий баланс">
+        <Section header="Доступно к трате">
           <div style={{ padding: '12px 16px' }}>
-            <Title level="1">{formatRub(total)}</Title>
-            {data && (
-              <Caption level="1" weight="3" style={{ opacity: 0.6 }}>
-                {data.length} {data.length === 1 ? 'счёт' : 'счетов'}
-              </Caption>
-            )}
+            <Title level="1">{formatRub(available)}</Title>
+            <Caption level="1" weight="3" style={{ opacity: 0.6 }}>
+              из {formatRub(total)}
+              {reserved > 0 && ` · в конвертах ${formatRub(reserved)}`}
+            </Caption>
           </div>
         </Section>
 

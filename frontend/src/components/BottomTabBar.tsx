@@ -8,14 +8,27 @@ const TABS = [
   { path: '/menu', label: 'Меню', icon: '⚙️' },
 ];
 
-// Modal-like страницы прячут таб-бар, чтобы юзер не уехал из формы случайным
-// тапом по табу.
-const MODAL_PATHS = new Set(['/add', '/plan/add']);
+// Modal-like / detail-страницы прячут таб-бар: формы (юзер не должен уехать
+// случайным тапом), envelope-detail (focus на одном конверте, leдgers).
+// EnvelopesPage / EnvelopeDetailPage open'аются из Меню → back возвращает туда.
+const MODAL_PATHS = new Set([
+  '/add',
+  '/plan/add',
+  '/envelopes',
+  '/envelopes/add',
+]);
+
+function isModalPath(pathname: string): boolean {
+  if (MODAL_PATHS.has(pathname)) return true;
+  // /envelopes/{id} (envelope detail) — тоже modal-like.
+  if (/^\/envelopes\/\d+$/.test(pathname)) return true;
+  return false;
+}
 
 export function BottomTabBar() {
   const navigate = useNavigate();
   const location = useLocation();
-  if (MODAL_PATHS.has(location.pathname)) return null;
+  if (isModalPath(location.pathname)) return null;
 
   // C3: только активная вкладка с подписью; неактивные — иконки.
   // viewport-breakpoint не сработал на скриншоте 2026-06-02 («Балан...» обрезалось),

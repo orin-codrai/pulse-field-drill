@@ -20,6 +20,13 @@ export function formatRub(minor: number): string {
   return rubFormatter.format(minor / 100);
 }
 
+/** PIN-C: entries amount_minor хранится signed (withdraw < 0). Для отображения
+ * показываем abs с явным знаком ± и пусть caller красит по signum. */
+export function formatSignedRub(minor: number): string {
+  const sign = minor < 0 ? '−' : '+';
+  return `${sign} ${rubFormatter.format(Math.abs(minor) / 100)}`;
+}
+
 export function formatRubPrecise(minor: number): string {
   return rubFormatterPrecise.format(minor / 100);
 }
