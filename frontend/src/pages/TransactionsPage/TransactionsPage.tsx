@@ -1,10 +1,12 @@
 import { List, Section, Cell, Spinner } from '@telegram-apps/telegram-ui';
 import type { FC } from 'react';
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
+import { useMainButton } from '@/hooks/useMainButton';
 import { useTransactions, type Transaction } from '@/hooks/useTransactions';
 import { formatDate, formatRub } from '@/lib/format';
 
@@ -23,9 +25,15 @@ const KIND_LABEL: Record<Transaction['kind'], string> = {
 };
 
 export const TransactionsPage: FC = () => {
+  const navigate = useNavigate();
   const { data: txs, loading, error } = useTransactions();
   const { data: cats } = useCategories();
   const { data: accs } = useAccounts();
+
+  useMainButton({
+    text: '+ Транзакция',
+    onClick: () => navigate('/add'),
+  });
 
   const catName = useMemo(() => {
     const m = new Map<number, string>();
