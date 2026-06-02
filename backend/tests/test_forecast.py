@@ -238,6 +238,69 @@ async def test_forecast_overdue_not_counted(
     assert len(due) == 1
 
 
+async def test_forecast_reserved_aggregates_active_envelopes(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Phase 6.D: reserved = Σ entries активных конвертов."""
+    e1 = await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "НЗ"},
+    )
+    eid1 = e1.json()["id"]
+    await app_client.post(
+        f"/api/envelopes/{eid1}/entries", headers=auth_header,
+        json={"kind": "manual", "amount_minor": 5000},
+    )
+    e2 = await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "Отпуск"},
+    )
+    eid2 = e2.json()["id"]
+    await app_client.post(
+        f"/api/envelopes/{eid2}/entries", headers=auth_header,
+        json={"kind": "manual", "amount_minor": 3000},
+    )
+
+    r = await app_client.get("/api/forecast", headers=auth_header)
+    f = r.json()
+    assert f["reserved"] == 8000
+    assert f["projected_available"] == f["projected_balance"] - 8000
+
+
+async def test_forecast_archived_envelope_not_in_reserved(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """B2 query-filter: архивный конверт исключается из reserved через
+    WHERE Envelope.archived_at IS NULL — entries не уничтожаются, резерв
+    «возвращается» в доступно. Un-archive восстановит."""
+    e = await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "X"},
+    )
+    eid = e.json()["id"]
+    await app_client.post(
+        f"/api/envelopes/{eid}/entries", headers=auth_header,
+        json={"kind": "manual", "amount_minor": 5000},
+    )
+
+    before = (await app_client.get("/api/forecast", headers=auth_header)).json()
+    assert before["reserved"] == 5000
+
+    await app_client.patch(
+        f"/api/envelopes/{eid}", headers=auth_header,
+        json={"archived_at": "2026-06-01T00:00:00Z"},
+    )
+
+    after = (await app_client.get("/api/forecast", headers=auth_header)).json()
+    assert after["reserved"] == 0
+    assert after["projected_available"] > before["projected_available"]
+
+    # Un-archive восстанавливает резерв без правки истории entries.
+    await app_client.patch(
+        f"/api/envelopes/{eid}", headers=auth_header,
+        json={"archived_at": None},
+    )
+    restored = (await app_client.get("/api/forecast", headers=auth_header)).json()
+    assert restored["reserved"] == 5000
+
+
 async def test_forecast_cross_workspace_isolation(
     app_client: AsyncClient, auth_header, fcst_setup, db_session
 ):

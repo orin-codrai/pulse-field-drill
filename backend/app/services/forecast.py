@@ -32,10 +32,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import PlannedOperation
+from app.models import Envelope, EnvelopeEntry, PlannedOperation
 from app.services.balances import all_balances
 from app.services.occurrences import occurrences_in_window
 
@@ -80,7 +80,19 @@ async def compute_forecast(
 
     balances = await all_balances(session, workspace_id)
     available_now = sum(b.balance_minor for b in balances)
-    reserved = 0  # Phase 6: Σ envelopes.reserved WHERE archived_at IS NULL.
+
+    # Phase 6: Σ entries активных конвертов (query-filter B2 — архивные
+    # исключены через WHERE Envelope.archived_at IS NULL, что освобождает
+    # резерв без правки entries-истории; un-archive восстанавливает).
+    reserved_raw = await session.scalar(
+        select(func.coalesce(func.sum(EnvelopeEntry.amount_minor), 0))
+        .join(Envelope, Envelope.id == EnvelopeEntry.envelope_id)
+        .where(
+            Envelope.workspace_id == workspace_id,
+            Envelope.archived_at.is_(None),
+        )
+    )
+    reserved = int(reserved_raw)
 
     planned_income = 0
     planned_expense = 0
