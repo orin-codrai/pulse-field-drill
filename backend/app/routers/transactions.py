@@ -163,6 +163,7 @@ async def update_transaction(
     tx_id: int,
     body: TransactionUpdate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Transaction:
     """Whitelist: только note и occurred_at. Сумма/тип/FK иммутабельны —
@@ -187,6 +188,7 @@ async def update_transaction(
 async def delete_transaction(
     tx_id: int,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     tx = await session.scalar(

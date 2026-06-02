@@ -90,13 +90,16 @@ async def _validate_category_for_planned(
 async def create_planned(
     body: PlannedOperationCreate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> PlannedOperation:
     await _validate_account_ref(session, body.account_id, ws.id, "account_id")
     await _validate_category_for_planned(
         session, body.category_id, ws.id, body.kind
     )
-    op = PlannedOperation(workspace_id=ws.id, **body.model_dump())
+    op = PlannedOperation(
+        workspace_id=ws.id, created_by_user_id=user.id, **body.model_dump()
+    )
     session.add(op)
     try:
         await session.commit()
@@ -175,6 +178,7 @@ async def update_planned(
     op_id: int,
     body: PlannedOperationUpdate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> PlannedOperation:
     op = await session.scalar(
@@ -241,6 +245,7 @@ async def update_planned(
 async def delete_planned(
     op_id: int,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """FK transactions.planned_operation_id ondelete='RESTRICT' (после
@@ -329,6 +334,8 @@ async def confirm_planned(
     # Tx — атомарно с инкрементом completed_cycles.
     tx_payload: dict = {
         "workspace_id": ws.id,
+        # P7: actor = тот, кто confirm нажал (не plan creator).
+        "created_by_user_id": user.id,
         "kind": op.kind,
         "amount_minor": op.amount_minor,
         "currency": op.currency,  # MF8: пробрасываем из плана (защита от drift).

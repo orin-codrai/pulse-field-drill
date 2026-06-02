@@ -3,9 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_workspace
+from app.auth.deps import current_user, current_workspace
 from app.db.session import get_session
-from app.models import Account, Workspace
+from app.models import Account, User, Workspace
 from app.schemas.account import (
     AccountBalanceOut,
     AccountCreate,
@@ -39,9 +39,12 @@ async def get_balances(
 async def create_account(
     body: AccountCreate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Account:
-    acc = Account(workspace_id=ws.id, **body.model_dump())
+    acc = Account(
+        workspace_id=ws.id, created_by_user_id=user.id, **body.model_dump()
+    )
     session.add(acc)
     try:
         await session.commit()
@@ -62,6 +65,7 @@ async def update_account(
     account_id: int,
     body: AccountUpdate,
     ws: Workspace = Depends(current_workspace),
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Account:
     # Filter by workspace_id в самом SELECT, не post-fetch. Mismatch → 404,

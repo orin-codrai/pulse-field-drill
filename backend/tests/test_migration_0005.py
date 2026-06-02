@@ -44,7 +44,9 @@ class TestMigration0005Smoke:
     async def test_upgrade_to_head_renames_goals_creates_entries(self):
         await _recreate_db()
         cfg = _alembic_cfg()
-        await asyncio.to_thread(command.upgrade, cfg, "head")
+        # Поднимаем до 0005 явно — будущие миграции (0006+) могут изменить
+        # колонки/таблицы, на которые опираются assertion'ы.
+        await asyncio.to_thread(command.upgrade, cfg, "0005_envelopes_from_goals")
 
         engine = create_async_engine(MIGRATION_URL)
         try:

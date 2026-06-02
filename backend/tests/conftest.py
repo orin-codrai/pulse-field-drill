@@ -143,6 +143,8 @@ async def test_engine() -> AsyncIterator:
 # Таблицы, которые TRUNCATE-аются между тестами. Системные категории
 # (`workspace_id IS NULL`) пере-сидятся после (RESTART IDENTITY сбрасывает их id).
 USER_TABLES = [
+    "audit_log",
+    "workspace_invites",
     "envelope_entries",
     "transactions",
     "planned_operations",

@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.30",
+    "email-validator>=2.2",
     "fastapi>=0.136.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
