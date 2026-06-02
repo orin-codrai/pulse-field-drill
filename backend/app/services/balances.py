@@ -63,8 +63,8 @@ async def account_balance(session: AsyncSession, account_id: int) -> int:
     return int(result) if result is not None else 0
 
 
-async def all_balances(session: AsyncSession, user_id: int) -> list[AccountBalance]:
-    """Балансы всех accounts юзера. Один SQL, без N+1.
+async def all_balances(session: AsyncSession, workspace_id: int) -> list[AccountBalance]:
+    """Балансы всех accounts workspace. Один SQL, без N+1.
 
     Балансовая формула:
         balance = initial_balance_minor
@@ -104,7 +104,7 @@ async def all_balances(session: AsyncSession, user_id: int) -> list[AccountBalan
             (Transaction.from_account_id == Account.id)
             | (Transaction.to_account_id == Account.id),
         )
-        .where(Account.user_id == user_id)
+        .where(Account.workspace_id == workspace_id)
         .group_by(Account.id, Account.name, Account.type, Account.initial_balance_minor)
         .order_by(Account.id)
     )

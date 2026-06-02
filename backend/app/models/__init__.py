@@ -7,6 +7,8 @@ from app.models.goal import Goal
 from app.models.receipt import Receipt
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import Workspace
+from app.models.workspace_member import WorkspaceMember
 
 __all__ = [
     "Account",
@@ -16,4 +18,6 @@ __all__ = [
     "Receipt",
     "Transaction",
     "User",
+    "Workspace",
+    "WorkspaceMember",
 ]

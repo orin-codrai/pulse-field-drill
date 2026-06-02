@@ -22,8 +22,8 @@ class Goal(Base):
     __tablename__ = "goals"
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=False), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    workspace_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     target_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -44,8 +44,8 @@ class Goal(Base):
         CheckConstraint("target_amount_minor > 0", name="goals_target_chk"),
         CheckConstraint("currency = 'RUB'", name="goals_currency_chk"),
         Index(
-            "goals_user_active_idx",
-            "user_id",
+            "goals_ws_active_idx",
+            "workspace_id",
             postgresql_where="archived_at IS NULL",
         ),
     )

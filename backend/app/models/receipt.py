@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     Text,
     func,
 )
@@ -23,8 +24,8 @@ class Receipt(Base):
     __tablename__ = "receipts"
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    workspace_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
     )
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -52,7 +53,7 @@ class Receipt(Base):
             "parsed_currency IS NULL OR parsed_currency = 'RUB'",
             name="receipts_parsed_currency_chk",
         ),
-        Index("receipts_user_created_idx", "user_id", "created_at"),
+        Index("receipts_ws_created_idx", "workspace_id", "created_at"),
         Index(
             "receipts_processing_idx",
             "status",

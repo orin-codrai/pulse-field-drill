@@ -5,9 +5,9 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user
+from app.auth.deps import current_workspace
 from app.db.session import get_session
-from app.models import Budget, Category, Transaction, User
+from app.models import Budget, Category, Transaction, Workspace
 from app.schemas.budget import (
     BudgetCreate,
     BudgetOut,
@@ -19,15 +19,15 @@ router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 
 async def _validate_category(
-    session: AsyncSession, category_id: int, user_id: int
+    session: AsyncSession, category_id: int, workspace_id: int
 ) -> None:
     """Mirror _validate_category_ref из transactions.py.
-    Системная (user_id IS NULL) или принадлежащая юзеру. Не archived.
+    Системная (workspace_id IS NULL) или принадлежащая workspace. Не archived.
     """
     cat = await session.scalar(
         select(Category).where(
             Category.id == category_id,
-            or_(Category.user_id.is_(None), Category.user_id == user_id),
+            or_(Category.workspace_id.is_(None), Category.workspace_id == workspace_id),
         )
     )
     if cat is None:
@@ -59,21 +59,21 @@ def _map_integrity_error(e: IntegrityError) -> HTTPException:
 
 @router.get("", response_model=list[BudgetOut])
 async def list_budgets(
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> list[Budget]:
-    stmt = select(Budget).where(Budget.user_id == user.id).order_by(Budget.id)
+    stmt = select(Budget).where(Budget.workspace_id == ws.id).order_by(Budget.id)
     return list((await session.execute(stmt)).scalars().all())
 
 
 @router.post("", response_model=BudgetOut, status_code=status.HTTP_201_CREATED)
 async def create_budget(
     body: BudgetCreate,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> Budget:
-    await _validate_category(session, body.category_id, user.id)
-    budget = Budget(user_id=user.id, **body.model_dump(exclude_none=True))
+    await _validate_category(session, body.category_id, ws.id)
+    budget = Budget(workspace_id=ws.id, **body.model_dump(exclude_none=True))
     session.add(budget)
     try:
         await session.commit()
@@ -91,11 +91,11 @@ async def create_budget(
 async def update_budget(
     budget_id: int,
     body: BudgetUpdate,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> Budget:
     budget = await session.scalar(
-        select(Budget).where(Budget.id == budget_id, Budget.user_id == user.id)
+        select(Budget).where(Budget.id == budget_id, Budget.workspace_id == ws.id)
     )
     if budget is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "budget not found")
@@ -119,11 +119,11 @@ async def update_budget(
 @router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_budget(
     budget_id: int,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     budget = await session.scalar(
-        select(Budget).where(Budget.id == budget_id, Budget.user_id == user.id)
+        select(Budget).where(Budget.id == budget_id, Budget.workspace_id == ws.id)
     )
     if budget is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "budget not found")
@@ -136,7 +136,7 @@ _PERIOD_INTERVAL = {"week": "7 days", "month": "1 month", "year": "1 year"}
 
 @router.get("/status", response_model=list[BudgetStatusItem])
 async def budgets_status(
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> list[BudgetStatusItem]:
     """Status для активных бюджетов. Window:
@@ -150,7 +150,7 @@ async def budgets_status(
     stmt = select(Budget, Category.name).join(
         Category, Category.id == Budget.category_id
     ).where(
-        Budget.user_id == user.id,
+        Budget.workspace_id == ws.id,
         Budget.archived_at.is_(None),
     )
     rows = (await session.execute(stmt)).all()
@@ -182,7 +182,7 @@ async def budgets_status(
 
         spent = await session.scalar(
             select(func.coalesce(func.sum(Transaction.amount_minor), 0)).where(
-                Transaction.user_id == user.id,
+                Transaction.workspace_id == ws.id,
                 Transaction.kind == "expense",
                 Transaction.category_id == budget.category_id,
                 Transaction.occurred_at >= period_start,

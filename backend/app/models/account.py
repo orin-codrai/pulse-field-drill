@@ -21,8 +21,12 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=False), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    workspace_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Аудит «кто создал» (заполняется с Phase 7); SET NULL — переживает purge юзера.
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,13 +49,13 @@ class Account(Base):
         ),
         CheckConstraint("currency = 'RUB'", name="accounts_currency_chk"),
         Index(
-            "accounts_user_active_idx",
-            "user_id",
+            "accounts_ws_active_idx",
+            "workspace_id",
             postgresql_where="archived_at IS NULL",
         ),
         Index(
-            "accounts_user_name_uq",
-            "user_id",
+            "accounts_ws_name_uq",
+            "workspace_id",
             "name",
             unique=True,
             postgresql_where="archived_at IS NULL",

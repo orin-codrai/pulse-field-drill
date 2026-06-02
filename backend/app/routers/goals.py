@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user
+from app.auth.deps import current_workspace
 from app.db.session import get_session
-from app.models import Account, Category, Goal, Transaction, User
+from app.models import Account, Category, Goal, Transaction, Workspace
 from app.schemas.goal import GoalCreate, GoalOut, GoalProgress, GoalUpdate
 from app.services.balances import account_balance
 
@@ -14,13 +14,15 @@ router = APIRouter(prefix="/goals", tags=["goals"])
 
 
 async def _validate_linked_account(
-    session: AsyncSession, account_id: int, user_id: int
+    session: AsyncSession, account_id: int, workspace_id: int
 ) -> None:
-    """linked_account_id должен принадлежать юзеру и быть активным.
+    """linked_account_id должен принадлежать workspace и быть активным.
     Mirror _validate_account_ref из transactions.py.
     """
     acc = await session.scalar(
-        select(Account).where(Account.id == account_id, Account.user_id == user_id)
+        select(Account).where(
+            Account.id == account_id, Account.workspace_id == workspace_id
+        )
     )
     if acc is None:
         raise HTTPException(
@@ -35,22 +37,22 @@ async def _validate_linked_account(
 
 @router.get("", response_model=list[GoalOut])
 async def list_goals(
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> list[Goal]:
-    stmt = select(Goal).where(Goal.user_id == user.id).order_by(Goal.id)
+    stmt = select(Goal).where(Goal.workspace_id == ws.id).order_by(Goal.id)
     return list((await session.execute(stmt)).scalars().all())
 
 
 @router.post("", response_model=GoalOut, status_code=status.HTTP_201_CREATED)
 async def create_goal(
     body: GoalCreate,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> Goal:
     if body.linked_account_id is not None:
-        await _validate_linked_account(session, body.linked_account_id, user.id)
-    goal = Goal(user_id=user.id, **body.model_dump(exclude_none=True))
+        await _validate_linked_account(session, body.linked_account_id, ws.id)
+    goal = Goal(workspace_id=ws.id, **body.model_dump(exclude_none=True))
     session.add(goal)
     await session.commit()
     await session.refresh(goal)
@@ -61,18 +63,18 @@ async def create_goal(
 async def update_goal(
     goal_id: int,
     body: GoalUpdate,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> Goal:
     goal = await session.scalar(
-        select(Goal).where(Goal.id == goal_id, Goal.user_id == user.id)
+        select(Goal).where(Goal.id == goal_id, Goal.workspace_id == ws.id)
     )
     if goal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "goal not found")
 
     updates = body.model_dump(exclude_unset=True)
     if "linked_account_id" in updates and updates["linked_account_id"] is not None:
-        await _validate_linked_account(session, updates["linked_account_id"], user.id)
+        await _validate_linked_account(session, updates["linked_account_id"], ws.id)
 
     for field, value in updates.items():
         setattr(goal, field, value)
@@ -84,11 +86,11 @@ async def update_goal(
 @router.delete("/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_goal(
     goal_id: int,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     goal = await session.scalar(
-        select(Goal).where(Goal.id == goal_id, Goal.user_id == user.id)
+        select(Goal).where(Goal.id == goal_id, Goal.workspace_id == ws.id)
     )
     if goal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "goal not found")
@@ -99,11 +101,11 @@ async def delete_goal(
 @router.get("/{goal_id}/progress", response_model=GoalProgress)
 async def goal_progress(
     goal_id: int,
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> GoalProgress:
     goal = await session.scalar(
-        select(Goal).where(Goal.id == goal_id, Goal.user_id == user.id)
+        select(Goal).where(Goal.id == goal_id, Goal.workspace_id == ws.id)
     )
     if goal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "goal not found")
@@ -115,7 +117,7 @@ async def goal_progress(
         # момента создания цели. См. must-fix #1 в plan v2.
         zarplata_id = await session.scalar(
             select(Category.id).where(
-                Category.user_id.is_(None),
+                Category.workspace_id.is_(None),
                 Category.name == "Зарплата",
                 Category.kind == "income",
             )
@@ -129,7 +131,7 @@ async def goal_progress(
             )
         total = await session.scalar(
             select(func.coalesce(func.sum(Transaction.amount_minor), 0)).where(
-                Transaction.user_id == user.id,
+                Transaction.workspace_id == ws.id,
                 Transaction.kind == "income",
                 Transaction.category_id == zarplata_id,
                 Transaction.occurred_at >= goal.created_at,

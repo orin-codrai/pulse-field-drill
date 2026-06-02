@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user
+from app.auth.deps import current_workspace
 from app.db.session import get_session
-from app.models import Category, Transaction, User
+from app.models import Category, Transaction, Workspace
 from app.schemas.report import CalendarItem, MonthReport
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -30,7 +30,7 @@ def _month_window(year: int | None, month: int | None) -> tuple[datetime, dateti
 
 @router.get("/month", response_model=MonthReport)
 async def month_report(
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
     year: int | None = Query(default=None),
     month: int | None = Query(default=None),
@@ -47,7 +47,7 @@ async def month_report(
             select(Category.name, func.sum(Transaction.amount_minor))
             .join(Category, Category.id == Transaction.category_id)
             .where(
-                Transaction.user_id == user.id,
+                Transaction.workspace_id == ws.id,
                 Transaction.kind == "expense",
                 Transaction.occurred_at >= start,
                 Transaction.occurred_at < end,
@@ -61,7 +61,7 @@ async def month_report(
         await session.execute(
             select(Transaction.kind, func.sum(Transaction.amount_minor))
             .where(
-                Transaction.user_id == user.id,
+                Transaction.workspace_id == ws.id,
                 Transaction.occurred_at >= start,
                 Transaction.occurred_at < end,
             )
@@ -80,7 +80,7 @@ async def month_report(
 
 @router.get("/calendar", response_model=list[CalendarItem])
 async def calendar_report(
-    user: User = Depends(current_user),
+    ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
     date_from: date | None = Query(default=None, alias="from"),
     date_to: date | None = Query(default=None, alias="to"),
@@ -113,7 +113,7 @@ async def calendar_report(
                 func.sum(Transaction.amount_minor),
             )
             .where(
-                Transaction.user_id == user.id,
+                Transaction.workspace_id == ws.id,
                 Transaction.occurred_at >= start_dt,
                 Transaction.occurred_at < end_dt,
                 Transaction.kind.in_(("expense", "income")),

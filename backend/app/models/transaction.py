@@ -21,8 +21,12 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    workspace_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Аудит «кто создал» (заполняется с Phase 7); SET NULL — переживает purge юзера.
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -70,8 +74,8 @@ class Transaction(Base):
             name="transactions_kind_fields_chk",
         ),
         Index(
-            "transactions_user_occurred_idx",
-            "user_id",
+            "transactions_ws_occurred_idx",
+            "workspace_id",
             "occurred_at",
             postgresql_using="btree",
         ),

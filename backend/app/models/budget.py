@@ -22,8 +22,8 @@ class Budget(Base):
     __tablename__ = "budgets"
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=False), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    workspace_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
     )
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=False
@@ -51,7 +51,7 @@ class Budget(Base):
         ),
         Index(
             "budgets_active_uq",
-            "user_id",
+            "workspace_id",
             "category_id",
             "period",
             unique=True,
