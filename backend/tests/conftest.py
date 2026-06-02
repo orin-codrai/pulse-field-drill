@@ -144,6 +144,7 @@ async def test_engine() -> AsyncIterator:
 # (`workspace_id IS NULL`) пере-сидятся после (RESTART IDENTITY сбрасывает их id).
 USER_TABLES = [
     "transactions",
+    "planned_operations",
     "receipts",
     "budgets",
     "goals",

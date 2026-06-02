@@ -107,8 +107,9 @@ class TestConcurrency:
         async with test_engine.begin() as conn:
             await conn.execute(
                 text(
-                    "TRUNCATE transactions, receipts, budgets, goals, accounts, "
-                    "categories, workspace_members, workspaces, users "
+                    "TRUNCATE transactions, planned_operations, receipts, "
+                    "budgets, goals, accounts, categories, "
+                    "workspace_members, workspaces, users "
                     "RESTART IDENTITY CASCADE"
                 )
             )

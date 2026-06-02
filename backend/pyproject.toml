@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "python-dateutil>=2.9",
     "sqlalchemy[asyncio]>=2.0",
     "uvicorn[standard]>=0.47.0",
 ]

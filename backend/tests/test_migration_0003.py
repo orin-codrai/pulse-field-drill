@@ -112,8 +112,10 @@ class TestMigration0003Smoke:
     async def test_downgrade_to_0002_succeeds_when_no_shared_workspace(self):
         await _recreate_db()
         cfg = _alembic_cfg()
-        await asyncio.to_thread(command.upgrade, cfg, "head")
-        await asyncio.to_thread(command.downgrade, cfg, "-1")
+        # Поднимаем до 0003 явно (не head) — иначе по мере добавления
+        # будущих миграций downgrade -1 уйдёт не туда и assertion'ы протухнут.
+        await asyncio.to_thread(command.upgrade, cfg, "0003_workspaces_rekey")
+        await asyncio.to_thread(command.downgrade, cfg, "7111ba4f0334")
 
         engine = create_async_engine(MIGRATION_URL)
         try:

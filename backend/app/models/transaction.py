@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     CHAR,
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Identity,
@@ -45,6 +46,13 @@ class Transaction(Base):
     receipt_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("receipts.id")
     )
+    # Источник tx — план + конкретное вхождение. Обе колонки NULL для tx,
+    # созданных не из плана. Unique partial index `transactions_planned_uq`
+    # ниже отбивает двойной confirm одного вхождения (ADR-0008).
+    planned_operation_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("planned_operations.id", ondelete="SET NULL")
+    )
+    occurrence_date: Mapped[date | None] = mapped_column(Date)
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -93,5 +101,16 @@ class Transaction(Base):
             "transactions_receipt_idx",
             "receipt_id",
             postgresql_where="receipt_id IS NOT NULL",
+        ),
+        # Идемпотентность confirm плана: одно вхождение → одна tx (ADR-0008).
+        # Partial WHERE отрезает все non-plan tx (где обе колонки NULL) от
+        # индекса — Postgres 16 default NULLS DISTINCT тоже их пропустил бы,
+        # но partial делает invariant независимым от глобального флага.
+        Index(
+            "transactions_planned_uq",
+            "planned_operation_id",
+            "occurrence_date",
+            unique=True,
+            postgresql_where="planned_operation_id IS NOT NULL",
         ),
     )

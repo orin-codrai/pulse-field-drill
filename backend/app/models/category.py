@@ -15,6 +15,11 @@ from app.db.base import Base
 
 
 class Category(Base):
+    """Категория транзакции/плана. Системная (workspace_id IS NULL) или
+    user-owned. Подкатегории через parent_id, глубина-2 enforce НЕ в БД
+    (CHECK не видит другую строку) а в _validate_parent_ref на роутере.
+    """
+
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=False), primary_key=True)
@@ -22,6 +27,12 @@ class Category(Base):
     # истины «системности». User-категории键ятся на свой workspace.
     workspace_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("workspaces.id", ondelete="RESTRICT")
+    )
+    # Родитель — категория того же workspace ИЛИ системная (для user-child
+    # под системным родителем, например «Продукты → Овощи»). RESTRICT: удалить
+    # родителя с детьми нельзя; роутер маппит FK violation в 409.
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("categories.id", ondelete="RESTRICT")
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)

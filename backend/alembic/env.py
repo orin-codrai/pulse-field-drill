@@ -46,6 +46,10 @@ def run_migrations_offline() -> None:
 INDEXES_MANUAL_ONLY = {
     "categories_ws_name_uq",
     "transactions_ws_occurred_idx",
+    # transactions_planned_uq — partial unique с WHERE; autogenerate видит,
+    # но во избежание ложных diff'ов на разных версиях Alembic держим
+    # в manual-only списке (consistency с 0003-стилем).
+    "transactions_planned_uq",
 }
 
 
