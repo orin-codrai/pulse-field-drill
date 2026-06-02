@@ -189,6 +189,170 @@ async def test_system_categories_global_across_workspaces(
     assert len(a_system) == 18
 
 
+async def test_create_subcategory_happy(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    parent = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Продукты-мои", "kind": "expense"},
+    )
+    pid = parent.json()["id"]
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Овощи", "kind": "expense", "parent_id": pid},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["parent_id"] == pid
+
+
+async def test_create_subcategory_under_system_parent_works(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """Юзер создаёт свою подкатегорию под СИСТЕМНОЙ — разрешено (D1: «Продукты
+    → Овощи», где Продукты системная)."""
+    cats = (await app_client.get("/api/categories", headers=auth_header)).json()
+    sys_products = next(
+        c for c in cats if c["name"] == "Продукты" and c["workspace_id"] is None
+    )
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Овощи", "kind": "expense", "parent_id": sys_products["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+
+async def test_create_subcategory_with_foreign_parent_id_422(
+    app_client: AsyncClient, provisioned_user, auth_header, db_session
+):
+    """MF9-1: parent_id чужой workspace категории → 422 «not found».
+    Без _validate_parent_ref запись пройдёт (FK на categories.id не смотрит
+    workspace), и дерево категорий потечёт между workspaces."""
+    from app.models import Category
+    from app.schemas.user import TelegramUser
+    from app.services.user_provisioning import ensure_user_provisioned
+
+    user_b = await ensure_user_provisioned(
+        db_session, TelegramUser(id=22222, first_name="Bob")
+    )
+    await db_session.commit()
+    bob_parent = Category(
+        workspace_id=user_b.active_workspace_id,
+        name="Bob's parent",
+        kind="expense",
+    )
+    db_session.add(bob_parent)
+    await db_session.commit()
+
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Hijack", "kind": "expense", "parent_id": bob_parent.id},
+    )
+    assert r.status_code == 422
+    assert "parent_id" in r.json()["detail"]
+
+
+async def test_create_subcategory_with_kind_mismatch_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    parent = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Мои-расходы", "kind": "expense"},
+    )
+    pid = parent.json()["id"]
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Зарплата-мини", "kind": "income", "parent_id": pid},
+    )
+    assert r.status_code == 422
+
+
+async def test_create_subcategory_both_under_narrow_parent_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """child='both' под parent='expense' — запрещено: ребёнок шире родителя."""
+    parent = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Только-расход", "kind": "expense"},
+    )
+    pid = parent.json()["id"]
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Универсал", "kind": "both", "parent_id": pid},
+    )
+    assert r.status_code == 422
+
+
+async def test_create_subcategory_under_both_parent_any_kind_works(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """parent='both' (например системная Корректировка) пускает любого ребёнка."""
+    cats = (await app_client.get("/api/categories", headers=auth_header)).json()
+    sys_both = next(
+        c for c in cats if c["name"] == "Корректировка" and c["workspace_id"] is None
+    )
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Кор-расход", "kind": "expense", "parent_id": sys_both["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+
+async def test_create_grandchild_rejected_422(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    """Глубина 2: внук (parent сам — подкатегория) → 422."""
+    parent = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Уровень-1", "kind": "expense"},
+    )
+    pid = parent.json()["id"]
+    child = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Уровень-2", "kind": "expense", "parent_id": pid},
+    )
+    cid = child.json()["id"]
+    r = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Уровень-3", "kind": "expense", "parent_id": cid},
+    )
+    assert r.status_code == 422
+    assert "deeper" in r.json()["detail"]
+
+
+async def test_archive_category_with_active_children_409(
+    app_client: AsyncClient, provisioned_user, auth_header
+):
+    parent = await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Архив-родитель", "kind": "expense"},
+    )
+    pid = parent.json()["id"]
+    await app_client.post(
+        "/api/categories",
+        headers=auth_header,
+        json={"name": "Архив-ребёнок", "kind": "expense", "parent_id": pid},
+    )
+    r = await app_client.patch(
+        f"/api/categories/{pid}",
+        headers=auth_header,
+        json={"archived_at": "2026-06-01T00:00:00Z"},
+    )
+    assert r.status_code == 409
+
+
 async def test_patch_other_users_category_returns_404(
     app_client: AsyncClient, provisioned_user, auth_header, db_session
 ):

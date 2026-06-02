@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +12,51 @@ from app.schemas.category import (
     CategoryOut,
     CategoryUpdate,
 )
+from app.services.resolvers import resolve_category
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+async def _validate_parent_ref(
+    session: AsyncSession,
+    parent_id: int,
+    workspace_id: int,
+    child_kind: str,
+) -> None:
+    """Проверки родителя при создании подкатегории (MF7/MF9-1).
+
+    - Родитель существует и доступен (свой workspace или системный).
+    - Родитель сам не подкатегория (глубина 2 — БД CHECK не видит другую
+      строку, enforce здесь).
+    - Родитель не archived.
+    - kind-наследование: parent='both' пускает любого ребёнка; child='both'
+      требует parent='both'; иначе совпадение kind.
+    """
+    parent = await resolve_category(session, parent_id, workspace_id)
+    if parent is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "parent_id: not found"
+        )
+    if parent.parent_id is not None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "parent_id: nested deeper than 2 levels",
+        )
+    if parent.archived_at is not None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "parent_id: parent is archived",
+        )
+    if child_kind == "both" and parent.kind != "both":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "parent_id: child kind='both' requires parent kind='both'",
+        )
+    if parent.kind != "both" and parent.kind != child_kind:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"parent_id: kind mismatch (parent={parent.kind}, child={child_kind})",
+        )
 
 
 @router.get("", response_model=list[CategoryOut])
@@ -38,6 +81,11 @@ async def create_category(
     ws: Workspace = Depends(current_workspace),
     session: AsyncSession = Depends(get_session),
 ) -> Category:
+    # MF9-1: без этой проверки `parent_id` юзера принимается на веру; FK
+    # на categories.id валидирует только существование, не membership →
+    # парент чужого workspace проходит, дерево течёт между workspaces.
+    if body.parent_id is not None:
+        await _validate_parent_ref(session, body.parent_id, ws.id, body.kind)
     cat = Category(workspace_id=ws.id, **body.model_dump())
     session.add(cat)
     try:
@@ -81,6 +129,26 @@ async def update_category(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "category not found")
 
     updates = body.model_dump(exclude_unset=True)
+
+    # Архивация родителя с активными детьми — нельзя. Альтернатива (каскад
+    # архивации) — backlog. Re-activate (archived_at=None) проверки не требует.
+    archiving = (
+        "archived_at" in updates
+        and updates["archived_at"] is not None
+        and cat.archived_at is None
+    )
+    if archiving:
+        n_children = await session.scalar(
+            select(func.count(Category.id)).where(
+                Category.parent_id == cat.id, Category.archived_at.is_(None)
+            )
+        )
+        if n_children:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "archive children first",
+            )
+
     for field, value in updates.items():
         setattr(cat, field, value)
 
