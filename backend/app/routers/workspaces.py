@@ -15,11 +15,18 @@ async def list_workspaces(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[Workspace]:
-    """Workspace'ы, в которых юзер состоит (personal + shared)."""
+    """Active workspace'ы юзера (personal + shared, archived исключены).
+
+    Архивные не показываются в switcher — иначе провал бага provisioning'a
+    (delete+restore плодил personal'ы) был бы видим юзеру и после fix'a.
+    """
     stmt = (
         select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
-        .where(WorkspaceMember.user_id == user.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            Workspace.archived_at.is_(None),
+        )
         .order_by(Workspace.id)
     )
     return list((await session.execute(stmt)).scalars().all())

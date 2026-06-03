@@ -165,8 +165,11 @@ async def restore_me(
 
     user.deleted_at = None
 
-    # Un-archive все personal workspace'ы.
-    personal_ws_rows = (await session.execute(
+    # Un-archive ТОЛЬКО первый personal workspace (тот что станет active).
+    # Дубликаты (накопленные старым багом provisioning'a) оставляем archived —
+    # симметрично self-heal в ensure_user_provisioned. Раньше restore bulk
+    # un-archive'ил все, плодя видимые дубликаты в switcher'е.
+    first_personal = await session.scalar(
         select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(
@@ -174,13 +177,12 @@ async def restore_me(
             Workspace.kind == "personal",
         )
         .order_by(Workspace.id)
-    )).scalars().all()
-    for ws in personal_ws_rows:
-        if ws.archived_at is not None:
-            ws.archived_at = None
-    # active_workspace_id ← первый personal (invariant: provisioning один personal).
-    if personal_ws_rows:
-        user.active_workspace_id = personal_ws_rows[0].id
+        .limit(1)
+    )
+    if first_personal is not None:
+        if first_personal.archived_at is not None:
+            first_personal.archived_at = None
+        user.active_workspace_id = first_personal.id
 
     await session.commit()
     await session.refresh(user)

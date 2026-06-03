@@ -11,10 +11,16 @@ Provisioning делает writes — `current_user` dependency остаётся 
 и упадёт с "no unique or exclusion constraint matching the ON CONFLICT
 specification".
 
-Personal workspace создаётся идемпотентно через проверку active_workspace_id.
-Гонка на самом первом concurrent /api/me brand-new юзера (оба создадут personal
-workspace) принята для v1: /api/me — редкий touchpoint, юзеров двое.
+Personal workspace создаётся ТОЛЬКО brand-new юзеру (нет existing personal).
+Soft-deleted юзер пропускается полностью (иначе `delete → /me → restore` плодит
+workspace'ы — delete зануляет active_workspace_id, /me видит NULL, создаёт
+новый). Existing personal переиспользуется (un-archive если нужно).
+
+Self-healing: при normal call архивируется все active personal'ы кроме
+active_workspace_id (cleanup для юзеров уже пострадавших от старого бага).
 """
+
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -68,19 +74,62 @@ async def ensure_user_provisioned(
     )
     user = (await session.execute(user_stmt)).scalar_one()
 
+    # Soft-deleted юзер: НЕ создавать workspace/accounts. Иначе delete зануляет
+    # active_workspace_id → /me видит NULL → плодит новый personal каждый
+    # цикл delete+restore. Frontend подхватит deleted_at и направит на /restore.
+    if user.deleted_at is not None:
+        return user
+
     # Personal workspace + owner-membership + active_workspace_id.
-    # Идемпотентно: если active_workspace_id уже стоит — переиспользуем.
+    # 1) active_workspace_id уже стоит → переиспользуем.
+    # 2) NULL, но existing personal найден → переиспользуем (un-archive).
+    # 3) Brand new — создаём.
     if user.active_workspace_id is None:
-        ws = Workspace(name="Личный", kind="personal")
-        session.add(ws)
-        await session.flush()  # нужен ws.id для membership + active_workspace_id
-        session.add(
-            WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner")
+        existing_personal = await session.scalar(
+            select(Workspace)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(
+                WorkspaceMember.user_id == user.id,
+                Workspace.kind == "personal",
+            )
+            .order_by(Workspace.id)
+            .limit(1)
         )
-        user.active_workspace_id = ws.id
-        workspace_id = ws.id
+        if existing_personal is not None:
+            if existing_personal.archived_at is not None:
+                existing_personal.archived_at = None
+            user.active_workspace_id = existing_personal.id
+            workspace_id = existing_personal.id
+        else:
+            ws = Workspace(name="Личный", kind="personal")
+            session.add(ws)
+            await session.flush()  # нужен ws.id для membership + active_workspace_id
+            session.add(
+                WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner")
+            )
+            user.active_workspace_id = ws.id
+            workspace_id = ws.id
     else:
         workspace_id = user.active_workspace_id
+
+    # Self-healing: archive дубликаты active personal'ов (cleanup для юзеров
+    # уже пострадавших от старого бага — те, у кого > 1 active personal).
+    # active_workspace_id остаётся; дубликаты переходят в archived.
+    duplicate_ids = (await session.execute(
+        select(Workspace.id)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            Workspace.kind == "personal",
+            Workspace.archived_at.is_(None),
+            Workspace.id != workspace_id,
+        )
+    )).scalars().all()
+    if duplicate_ids:
+        now = datetime.now(timezone.utc)
+        for ws_id in duplicate_ids:
+            dup = await session.get(Workspace, ws_id)
+            dup.archived_at = now
 
     for name, type_, icon in DEFAULT_ACCOUNTS:
         await session.execute(
