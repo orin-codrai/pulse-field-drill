@@ -167,7 +167,7 @@ export const AddTransactionPage = () => {
     <Page back={true}>
       <List>
         <Section header="Тип">
-          <div style={{ display: 'flex', gap: 4, padding: '8px 16px', flexWrap: 'wrap' }}>
+          <div className="pfd-button-row pfd-button-row-wrap">
             {(['expense', 'income', 'transfer', 'adjustment'] as Kind[]).map((k) => (
               <Button
                 key={k}
@@ -183,7 +183,7 @@ export const AddTransactionPage = () => {
 
         {form.kind === 'adjustment' && (
           <Section header="Направление">
-            <div style={{ display: 'flex', gap: 4, padding: '8px 16px' }}>
+            <div className="pfd-button-row">
               <Button
                 size="s"
                 mode={form.adjustment_dir === 'out' ? 'filled' : 'plain'}
@@ -281,7 +281,7 @@ export const AddTransactionPage = () => {
 
         {submitError && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>{submitError}</Cell>
+            <Cell><span className="pfd-text-danger">{submitError}</span></Cell>
           </Section>
         )}
       </List>

@@ -131,3 +131,14 @@ body {
 .pfd-block-tight {
   padding: var(--pfd-space-2) var(--pfd-space-4);
 }
+
+/* Inline button group inside a Section (kind/direction switchers etc). */
+.pfd-button-row {
+  display: flex;
+  gap: var(--pfd-space-1);
+  padding: var(--pfd-space-2) var(--pfd-space-4);
+}
+
+.pfd-button-row-wrap {
+  flex-wrap: wrap;
+}
