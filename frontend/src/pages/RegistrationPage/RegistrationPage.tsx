@@ -94,9 +94,7 @@ export const RegistrationPage = () => {
 
         {error && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {error}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{error}</span></Cell>
           </Section>
         )}
       </List>

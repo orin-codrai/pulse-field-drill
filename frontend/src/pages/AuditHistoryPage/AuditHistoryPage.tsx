@@ -1,4 +1,5 @@
 import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
+import { Clock } from 'lucide-react';
 
 import { Page } from '@/components/Page.tsx';
 import { useAudit } from '@/hooks/useAudit';
@@ -45,13 +46,14 @@ export const AuditHistoryPage = () => {
             <Cell subtitle="Пока никто ничего не менял">Пусто</Cell>
           )}
           {data?.map((e) => {
-            // MF15-3 «вы»-маркер через internal_id (единственное место использования).
+            // MF15-3 «вы»-маркер через internal_id.
             const isMe = e.actor_user_id === user?.internal_id;
             const actor = e.actor_display_name ?? 'бывший участник';
             return (
               <Cell
                 key={e.id}
-                subtitle={`${formatRelative(e.created_at)}`}
+                before={<Clock size={16} className="pfd-text-neutral" />}
+                subtitle={formatRelative(e.created_at)}
               >
                 {isMe ? 'Вы' : actor}
                 {' '}{ACTION_LABEL[e.action]}

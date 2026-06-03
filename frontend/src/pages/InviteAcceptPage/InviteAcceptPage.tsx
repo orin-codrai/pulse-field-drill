@@ -1,4 +1,4 @@
-import { Cell, List, Section, Spinner, Title } from '@telegram-apps/telegram-ui';
+import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -29,7 +29,6 @@ export const InviteAcceptPage = () => {
     try {
       await apiPost(`/api/invites/${token}/accept`, raw, {});
       // PIN-B: backend ставит active_workspace_id на shared.
-      // Чистим pending token (если открыты повторно — MF14-8 защита).
       sessionStorage.removeItem('pendingInviteToken');
       bump('me');
       bump('workspaces');
@@ -46,7 +45,6 @@ export const InviteAcceptPage = () => {
         } else if (e.status === 409 && /capacity|shared workspaces/i.test(e.detail)) {
           setSubmitError('Достигнут максимум участников или своих совместных workspace.');
         } else if (e.status === 409 && /already/i.test(e.detail)) {
-          // Already member — это OK, перебрасываем.
           navigate('/');
           return;
         } else if (e.status === 412) {
@@ -94,29 +92,21 @@ export const InviteAcceptPage = () => {
     <Page back={true}>
       <List>
         <Section header="Приглашение">
-          <div style={{ padding: '12px 16px' }}>
-            <Title level="2">{data.workspace_name}</Title>
-            <div style={{ marginTop: 8, opacity: 0.7 }}>
-              {data.inviter_display_name ?? 'Кто-то'} приглашает тебя в
-              совместный workspace.
-            </div>
+          <div className="pfd-hero">
+            <span style={{ fontSize: 'var(--pfd-text-18)', fontWeight: 600, lineHeight: 'var(--pfd-leading-tight)' }}>
+              {data.workspace_name}
+            </span>
+            <span className="pfd-hero-meta">
+              {data.inviter_display_name ?? 'Кто-то'} приглашает тебя в совместный workspace.
+            </span>
             {data.status !== 'pending' && (
-              <div
-                style={{
-                  marginTop: 12,
-                  color: 'var(--tg-theme-hint-color)',
-                }}
-              >
-                Статус: {data.status}
-              </div>
+              <span className="pfd-text-meta">Статус: {data.status}</span>
             )}
           </div>
         </Section>
         {submitError && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {submitError}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{submitError}</span></Cell>
           </Section>
         )}
       </List>

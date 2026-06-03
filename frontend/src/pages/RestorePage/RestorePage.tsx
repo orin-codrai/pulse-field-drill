@@ -1,4 +1,4 @@
-import { Button, Cell, List, Section, Title } from '@telegram-apps/telegram-ui';
+import { Button, Cell, List, Section } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
 import { useState } from 'react';
 
@@ -37,12 +37,14 @@ export const RestorePage = () => {
     <Page back={false}>
       <List>
         <Section header="Аккаунт удалён">
-          <div style={{ padding: '12px 16px' }}>
-            <Title level="2">Восстановить?</Title>
-            <div style={{ marginTop: 8, opacity: 0.7 }}>
-              Через {daysLeft} {daysLeft === 1 ? 'день' : 'дней'} данные будут удалены безвозвратно.
+          <div className="pfd-hero">
+            <span className="pfd-num-lg">{daysLeft}</span>
+            <span className="pfd-hero-meta">
+              {daysLeft === 1 ? 'день' : 'дней'} до безвозвратного удаления
+            </span>
+            <span className="pfd-text-meta">
               Совместные workspace'ы не вернутся — попроси партнёра пригласить заново.
-            </div>
+            </span>
           </div>
         </Section>
 
@@ -53,9 +55,7 @@ export const RestorePage = () => {
             </Button>
           </div>
           {error && (
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {error}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{error}</span></Cell>
           )}
         </Section>
       </List>

@@ -1,11 +1,5 @@
-import {
-  Caption,
-  Cell,
-  List,
-  Section,
-  Spinner,
-  Title,
-} from '@telegram-apps/telegram-ui';
+import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
+import { Mail } from 'lucide-react';
 import type { FC } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -30,11 +24,9 @@ export const EnvelopesPage: FC = () => {
       <List>
         {forecast && (
           <Section header="Зарезервировано всего">
-            <div style={{ padding: '12px 16px' }}>
-              <Title level="2">{formatRub(forecast.reserved)}</Title>
-              <Caption level="1" weight="3" style={{ opacity: 0.6 }}>
-                из «доступно к трате»
-              </Caption>
+            <div className="pfd-hero">
+              <span className="pfd-num-lg">{formatRub(forecast.reserved)}</span>
+              <span className="pfd-hero-meta">из «доступно к трате»</span>
             </div>
           </Section>
         )}
@@ -46,19 +38,34 @@ export const EnvelopesPage: FC = () => {
             <Cell subtitle="Добавь через кнопку внизу">Конвертов пока нет</Cell>
           )}
           {envelopes?.map((e) => (
-            <Cell
+            <div
+              className="pfd-row"
               key={e.id}
-              before={<span style={{ fontSize: 28 }}>{e.icon ?? '✉️'}</span>}
-              subtitle={
-                e.percent !== null
-                  ? `${e.percent}% от каждого дохода`
-                  : 'Ручной (без авто-скима)'
-              }
-              after={<strong>{formatRub(e.reserved_minor)}</strong>}
               onClick={() => navigate(`/envelopes/${e.id}`)}
+              role="button"
             >
-              {e.name}
-            </Cell>
+              {e.icon ? (
+                <span style={{ fontSize: '20px', lineHeight: 1, width: 20, textAlign: 'center' }}>
+                  {e.icon}
+                </span>
+              ) : (
+                <span
+                  className="pfd-cat-dot"
+                  style={{ background: `var(--pfd-cat-${(e.id % 6) + 1})` }}
+                />
+              )}
+              <div className="pfd-row-stack">
+                <span>{e.name}</span>
+                <span className="pfd-text-meta">
+                  {e.percent !== null
+                    ? `${e.percent}% от каждого дохода`
+                    : 'Ручной (без авто-скима)'}
+                </span>
+              </div>
+              <span className="pfd-num pfd-text-emphasized">
+                {formatRub(e.reserved_minor)}
+              </span>
+            </div>
           ))}
         </Section>
       </List>

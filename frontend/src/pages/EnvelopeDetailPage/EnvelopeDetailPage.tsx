@@ -1,12 +1,10 @@
 import {
   Button,
-  Caption,
   Cell,
   Input,
   List,
   Section,
   Spinner,
-  Title,
 } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
 import { useState } from 'react';
@@ -61,8 +59,7 @@ export const EnvelopeDetailPage = () => {
       bump('forecast');
       setAmountInput('');
     } catch (e) {
-      // PIN-F мягкая подача 409: история неизменяема, объясняем
-      // что делать.
+      // PIN-F мягкая подача 409: история неизменяема.
       if (e instanceof ApiError && e.status === 409) {
         setSubmitError(
           envelope?.archived_at
@@ -96,14 +93,14 @@ export const EnvelopeDetailPage = () => {
     <Page back={true}>
       <List>
         <Section header={envelope.name}>
-          <div style={{ padding: '12px 16px' }}>
-            <Title level="1">{formatRub(envelope.reserved_minor)}</Title>
-            <Caption level="1" weight="3" style={{ opacity: 0.6 }}>
+          <div className="pfd-hero">
+            <span className="pfd-num-lg">{formatRub(envelope.reserved_minor)}</span>
+            <span className="pfd-hero-meta">
               зарезервировано
               {envelope.percent !== null && ` · ${envelope.percent}% авто-ским`}
               {envelope.target_amount_minor !== null &&
                 ` · цель ${formatRub(envelope.target_amount_minor)}`}
-            </Caption>
+            </span>
           </div>
         </Section>
 
@@ -111,7 +108,7 @@ export const EnvelopeDetailPage = () => {
           header={kind === 'manual' ? 'Положить ещё' : 'Забрать'}
           footer="Manual растит резерв; withdraw уменьшает (запись в леджер, история сохраняется)."
         >
-          <div style={{ display: 'flex', gap: 4, padding: '8px 16px' }}>
+          <div className="pfd-button-row">
             <Button
               size="s"
               mode={kind === 'manual' ? 'filled' : 'plain'}
@@ -145,9 +142,7 @@ export const EnvelopeDetailPage = () => {
             </Button>
           </div>
           {submitError && (
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {submitError}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{submitError}</span></Cell>
           )}
         </Section>
 
@@ -160,26 +155,21 @@ export const EnvelopeDetailPage = () => {
             <Cell>Пока пусто</Cell>
           )}
           {entries?.map((e) => (
-            <Cell
-              key={e.id}
-              subtitle={`${KIND_LABEL[e.kind]} · ${new Date(e.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
-              after={
-                <strong
-                  style={{
-                    color:
-                      e.amount_minor < 0
-                        ? 'var(--tg-theme-destructive-text-color, #e53935)'
-                        : 'var(--tg-theme-text-color)',
-                  }}
-                >
-                  {formatSignedRub(e.amount_minor)}
-                </strong>
-              }
-            >
-              {e.kind === 'skim' && e.source_transaction_id
-                ? `Из дохода #${e.source_transaction_id}`
-                : KIND_LABEL[e.kind]}
-            </Cell>
+            <div className="pfd-row" key={e.id}>
+              <div className="pfd-row-stack">
+                <span>
+                  {e.kind === 'skim' && e.source_transaction_id
+                    ? `Из дохода #${e.source_transaction_id}`
+                    : KIND_LABEL[e.kind]}
+                </span>
+                <span className="pfd-text-meta">
+                  {KIND_LABEL[e.kind]} · {new Date(e.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                </span>
+              </div>
+              <span className={`pfd-num pfd-text-emphasized ${e.amount_minor < 0 ? 'pfd-text-danger' : ''}`}>
+                {formatSignedRub(e.amount_minor)}
+              </span>
+            </div>
           ))}
         </Section>
 

@@ -138,9 +138,7 @@ export const AddEnvelopePage = () => {
 
         {submitError && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {submitError}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{submitError}</span></Cell>
           </Section>
         )}
       </List>

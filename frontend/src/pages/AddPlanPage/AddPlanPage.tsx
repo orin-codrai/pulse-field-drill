@@ -169,7 +169,7 @@ export const AddPlanPage = () => {
     <Page back={true}>
       <List>
         <Section header="Тип">
-          <div style={{ display: 'flex', gap: 4, padding: '8px 16px' }}>
+          <div className="pfd-button-row">
             {(['expense', 'income'] as Kind[]).map((k) => (
               <Button
                 key={k}
@@ -271,9 +271,7 @@ export const AddPlanPage = () => {
 
         {submitError && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {submitError}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{submitError}</span></Cell>
           </Section>
         )}
       </List>
