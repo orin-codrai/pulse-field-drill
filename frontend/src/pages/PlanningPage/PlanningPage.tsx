@@ -1,24 +1,28 @@
 import {
   Button,
-  Caption,
   Cell,
   List,
   Section,
   Spinner,
-  Title,
 } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
+import { Clock } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { useCategories, type Category } from '@/hooks/useCategories';
-import { useDuePlanned, usePlanned, type DuePlannedItem } from '@/hooks/usePlanned';
+import { useDuePlanned, usePlanned, type DuePlannedItem, type PlannedKind } from '@/hooks/usePlanned';
 import { useForecast } from '@/hooks/useForecast';
 import { useMainButton } from '@/hooks/useMainButton';
 import { ApiError, apiPost } from '@/lib/api';
 import { formatRub } from '@/lib/format';
 import { bump } from '@/lib/refetch';
+
+const KIND_STYLE: Record<PlannedKind, { sign: string; cls: string }> = {
+  income:  { sign: '+', cls: 'pfd-text-success' },
+  expense: { sign: '−', cls: 'pfd-text-danger' },
+};
 
 function formatHorizon(iso: string): string {
   const d = new Date(iso + 'T00:00:00Z');
@@ -69,8 +73,8 @@ export const PlanningPage = () => {
     (p) => p.status === 'planned' && p.archived_at === null && !dueIds.has(p.id),
   );
 
-  // Подача проектируемого баланса: мягкая для negative, не красная.
   const projected = forecast.data?.projected_available ?? 0;
+  // Мягкая подача negative — hint-color, не destructive.
   const projectedColor = projected >= 0
     ? 'var(--tg-theme-text-color)'
     : 'var(--tg-theme-hint-color)';
@@ -82,25 +86,25 @@ export const PlanningPage = () => {
           {forecast.loading && <Cell before={<Spinner size="s" />}>Загрузка…</Cell>}
           {forecast.error && <Cell>Ошибка: {forecast.error}</Cell>}
           {forecast.data && (
-            <div style={{ padding: '12px 16px' }}>
-              <Title level="1" style={{ color: projectedColor }}>
+            <div className="pfd-hero">
+              <span className="pfd-num-lg" style={{ color: projectedColor }}>
                 {formatRub(projected)}
-              </Title>
-              <Caption level="1" weight="3" style={{ opacity: 0.6 }}>
+              </span>
+              <span className="pfd-hero-meta">
                 к {formatHorizon(forecast.data.horizon)}
-              </Caption>
-              <div style={{ marginTop: 8, fontSize: 13, opacity: 0.7 }}>
-                Сейчас: {formatRub(forecast.data.available_now)}
+              </span>
+              <span className="pfd-text-meta">
+                Сейчас: <span className="pfd-num">{formatRub(forecast.data.available_now)}</span>
                 {forecast.data.planned_income > 0 && (
-                  <> · доход {formatRub(forecast.data.planned_income)}</>
+                  <> · доход <span className="pfd-num">{formatRub(forecast.data.planned_income)}</span></>
                 )}
                 {forecast.data.planned_expense > 0 && (
-                  <> · расход {formatRub(forecast.data.planned_expense)}</>
+                  <> · расход <span className="pfd-num">{formatRub(forecast.data.planned_expense)}</span></>
                 )}
                 {forecast.data.reserved > 0 && (
-                  <> · резерв {formatRub(forecast.data.reserved)}</>
+                  <> · резерв <span className="pfd-num">{formatRub(forecast.data.reserved)}</span></>
                 )}
-              </div>
+              </span>
             </div>
           )}
         </Section>
@@ -111,11 +115,19 @@ export const PlanningPage = () => {
           {due.data && due.data.length === 0 && (
             <Cell subtitle="Все подтверждено">Нет ожидающих подтверждения</Cell>
           )}
-          {due.data?.map((item) => (
-            <Cell
-              key={item.planned_operation_id}
-              subtitle={`${formatHorizon(item.scheduled_date)} · ${catName(categories, item.category_id)}`}
-              after={
+          {due.data?.map((item) => {
+            const k = KIND_STYLE[item.kind];
+            return (
+              <div className="pfd-row" key={item.planned_operation_id}>
+                <Clock size={16} className="pfd-text-warning" />
+                <div className="pfd-row-stack">
+                  <span className={`pfd-num pfd-text-emphasized ${k.cls}`}>
+                    {k.sign} {formatRub(item.amount_minor)}
+                  </span>
+                  <span className="pfd-text-meta">
+                    {formatHorizon(item.scheduled_date)} · {catName(categories, item.category_id)}
+                  </span>
+                </div>
                 <Button
                   size="s"
                   disabled={confirming === item.planned_operation_id}
@@ -123,16 +135,11 @@ export const PlanningPage = () => {
                 >
                   {confirming === item.planned_operation_id ? '…' : 'Подтвердить'}
                 </Button>
-              }
-            >
-              {item.kind === 'income' ? '+ ' : '− '}
-              {formatRub(item.amount_minor)}
-            </Cell>
-          ))}
+              </div>
+            );
+          })}
           {confirmError && (
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {confirmError}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{confirmError}</span></Cell>
           )}
         </Section>
 
@@ -142,15 +149,26 @@ export const PlanningPage = () => {
           {!planned.loading && upcoming.length === 0 && (
             <Cell subtitle="Добавь план через кнопку внизу">Пока пусто</Cell>
           )}
-          {upcoming.map((p) => (
-            <Cell
-              key={p.id}
-              subtitle={`${formatHorizon(p.first_date)} · ${catName(categories, p.category_id)} · ${p.recurrence}`}
-              after={<strong>{p.kind === 'income' ? '+' : '−'}{formatRub(p.amount_minor)}</strong>}
-            >
-              {p.note ?? catName(categories, p.category_id)}
-            </Cell>
-          ))}
+          {upcoming.map((p) => {
+            const k = KIND_STYLE[p.kind];
+            return (
+              <div className="pfd-row" key={p.id}>
+                <span
+                  className="pfd-cat-dot"
+                  style={{ background: `var(--pfd-cat-${(p.category_id % 6) + 1})` }}
+                />
+                <div className="pfd-row-stack">
+                  <span>{p.note ?? catName(categories, p.category_id)}</span>
+                  <span className="pfd-text-meta">
+                    {formatHorizon(p.first_date)} · {catName(categories, p.category_id)} · {p.recurrence}
+                  </span>
+                </div>
+                <span className={`pfd-num pfd-text-emphasized ${k.cls}`}>
+                  {k.sign} {formatRub(p.amount_minor)}
+                </span>
+              </div>
+            );
+          })}
         </Section>
       </List>
     </Page>
