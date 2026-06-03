@@ -1,5 +1,117 @@
 body {
   background: var(--tg-theme-secondary-bg-color, white);
+  color: var(--tg-theme-text-color, #000);
+  font-family: var(--pfd-font-sans);
+  font-size: var(--pfd-text-14);
+  line-height: var(--pfd-leading-body);
   padding: 0;
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Numbers ----------
+   Apply to every formatted ₽ number for tabular alignment. */
+.pfd-num {
+  font-family: var(--pfd-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.pfd-num-md {
+  font-family: var(--pfd-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-size: var(--pfd-text-16);
+  font-weight: var(--pfd-weight-medium);
+}
+
+.pfd-num-lg {
+  font-family: var(--pfd-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-size: var(--pfd-text-24);
+  font-weight: var(--pfd-weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: var(--pfd-leading-tight);
+}
+
+/* ---------- Text helpers ---------- */
+.pfd-text-hint {
+  color: var(--tg-theme-hint-color);
+  font-size: var(--pfd-text-13);
+}
+
+.pfd-text-meta {
+  font-size: var(--pfd-text-12);
+  color: var(--tg-theme-hint-color);
+  line-height: var(--pfd-leading-tight);
+}
+
+.pfd-text-emphasized {
+  font-weight: var(--pfd-weight-semibold);
+  color: var(--tg-theme-text-color);
+}
+
+.pfd-text-success { color: var(--pfd-color-success); }
+.pfd-text-danger  { color: var(--pfd-color-danger); }
+.pfd-text-warning { color: var(--pfd-color-warning); }
+.pfd-text-neutral { color: var(--pfd-color-neutral); }
+
+/* ---------- Category accent dot ---------- */
+.pfd-cat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---------- Dense rows ---------- */
+.pfd-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pfd-space-3);
+  padding: var(--pfd-space-2) var(--pfd-space-4);
+  min-height: 36px;
+}
+
+.pfd-row-tight {
+  display: flex;
+  align-items: center;
+  gap: var(--pfd-space-2);
+  padding: var(--pfd-space-1) var(--pfd-space-4);
+  min-height: 28px;
+}
+
+.pfd-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Hero number container ---------- */
+.pfd-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pfd-space-1);
+  padding: var(--pfd-space-3) var(--pfd-space-4);
+}
+
+.pfd-hero-meta {
+  font-size: var(--pfd-text-12);
+  color: var(--tg-theme-hint-color);
+  line-height: var(--pfd-leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Blocks ---------- */
+.pfd-block {
+  padding: var(--pfd-space-3) var(--pfd-space-4);
+}
+
+.pfd-block-tight {
+  padding: var(--pfd-space-2) var(--pfd-space-4);
 }

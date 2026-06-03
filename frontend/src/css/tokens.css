@@ -1,0 +1,71 @@
+:root {
+  /* ---------- Spacing (4-base) ---------- */
+  --pfd-space-1: 4px;
+  --pfd-space-2: 8px;
+  --pfd-space-3: 12px;
+  --pfd-space-4: 16px;
+  --pfd-space-6: 24px;
+  --pfd-space-8: 32px;
+
+  /* ---------- Typography ---------- */
+  --pfd-font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --pfd-font-mono:
+    ui-monospace, "SF Mono", "Menlo", "Consolas", "Roboto Mono",
+    "DejaVu Sans Mono", monospace;
+
+  --pfd-text-12: 12px;
+  --pfd-text-13: 13px;
+  --pfd-text-14: 14px;
+  --pfd-text-16: 16px;
+  --pfd-text-18: 18px;
+  --pfd-text-24: 24px;
+
+  --pfd-weight-regular: 400;
+  --pfd-weight-medium: 500;
+  --pfd-weight-semibold: 600;
+
+  --pfd-leading-tight: 1.2;
+  --pfd-leading-body: 1.35;
+
+  /* ---------- Radii ---------- */
+  --pfd-radius-sm: 8px;
+  --pfd-radius-md: 12px;
+  --pfd-radius-pill: 24px;
+
+  /* ---------- Semantic colors ----------
+     Inheriting raw Telegram theme vars (read-only):
+       --tg-theme-bg-color
+       --tg-theme-text-color
+       --tg-theme-hint-color
+       --tg-theme-link-color
+       --tg-theme-button-color
+       --tg-theme-section-bg-color
+       --tg-theme-secondary-bg-color
+       --tg-theme-destructive-text-color
+       --tg-theme-accent-text-color
+  */
+  --pfd-color-success: #10b981;
+  --pfd-color-danger:  var(--tg-theme-destructive-text-color, #e53935);
+  --pfd-color-warning: #f59e0b;
+  --pfd-color-neutral: var(--tg-theme-hint-color, #8e8e93);
+
+  /* ---------- Category accent palette ---------- */
+  --pfd-cat-1: #ef4444;
+  --pfd-cat-2: #f97316;
+  --pfd-cat-3: #eab308;
+  --pfd-cat-4: #22c55e;
+  --pfd-cat-5: #3b82f6;
+  --pfd-cat-6: #a855f7;
+}
+
+/* Dark-mode override — only for semantic colors that need brightening on
+   dark backgrounds. Telegram-UI AppRoot appearance="dark" remains primary
+   driver via --tg-theme-* substitution; this is belt-and-braces. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pfd-color-success: #34d399;
+    --pfd-color-warning: #fbbf24;
+  }
+}

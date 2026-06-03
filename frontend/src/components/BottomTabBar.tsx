@@ -1,11 +1,12 @@
 import { Tabbar } from '@telegram-apps/telegram-ui';
+import { CalendarClock, Receipt, Settings, Wallet } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 const TABS = [
-  { path: '/', label: 'Балансы', icon: '💼' },
-  { path: '/transactions', label: 'Список', icon: '📋' },
-  { path: '/planning', label: 'Планы', icon: '📅' },
-  { path: '/menu', label: 'Меню', icon: '⚙️' },
+  { path: '/', label: 'Балансы', Icon: Wallet },
+  { path: '/transactions', label: 'Список', Icon: Receipt },
+  { path: '/planning', label: 'Планы', Icon: CalendarClock },
+  { path: '/menu', label: 'Меню', Icon: Settings },
 ];
 
 // Modal-like / detail-страницы прячут таб-бар: формы (юзер не должен уехать
@@ -37,22 +38,21 @@ export function BottomTabBar() {
   const location = useLocation();
   if (isModalPath(location.pathname)) return null;
 
-  // C3: только активная вкладка с подписью; неактивные — иконки.
-  // viewport-breakpoint не сработал на скриншоте 2026-06-02 («Балан...» обрезалось),
-  // упрощаем — всегда icon-only для неактивных, чтобы 4 таба влезали на любом
-  // устройстве без обрезания.
+  // C3: только активная вкладка с подписью; неактивные — иконки. См. журнал
+  // 2026-06-02: viewport-breakpoint не сработал, упрощено до «всегда icon-only
+  // для неактивных», чтобы 4 таба влезали на любом устройстве.
   return (
     <Tabbar>
-      {TABS.map((t) => {
-        const selected = location.pathname === t.path;
+      {TABS.map(({ path, label, Icon }) => {
+        const selected = location.pathname === path;
         return (
           <Tabbar.Item
-            key={t.path}
-            text={selected ? t.label : ''}
+            key={path}
+            text={selected ? label : ''}
             selected={selected}
-            onClick={() => navigate(t.path)}
+            onClick={() => navigate(path)}
           >
-            <span style={{ fontSize: 22 }}>{t.icon}</span>
+            <Icon size={24} strokeWidth={2} />
           </Tabbar.Item>
         );
       })}
