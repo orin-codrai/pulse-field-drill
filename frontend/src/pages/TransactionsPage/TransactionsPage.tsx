@@ -1,4 +1,4 @@
-import { List, Section, Cell, Spinner } from '@telegram-apps/telegram-ui';
+import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
 import type { FC } from 'react';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -7,17 +7,17 @@ import { Page } from '@/components/Page.tsx';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { useMainButton } from '@/hooks/useMainButton';
-import { useTransactions, type Transaction } from '@/hooks/useTransactions';
+import { useTransactions, type Transaction, type TransactionKind } from '@/hooks/useTransactions';
 import { formatDate, formatRub } from '@/lib/format';
 
-const KIND_SIGN: Record<Transaction['kind'], string> = {
-  expense: '−',
-  income: '+',
-  transfer: '↔',
-  adjustment: '±',
+const KIND_STYLE: Record<TransactionKind, { sign: string; cls: string }> = {
+  expense:    { sign: '−', cls: 'pfd-text-danger' },
+  income:     { sign: '+', cls: 'pfd-text-success' },
+  transfer:   { sign: '↔', cls: 'pfd-text-neutral' },
+  adjustment: { sign: '±', cls: 'pfd-text-warning' },
 };
 
-const KIND_LABEL: Record<Transaction['kind'], string> = {
+const KIND_LABEL: Record<TransactionKind, string> = {
   expense: 'Расход',
   income: 'Доход',
   transfer: 'Перевод',
@@ -65,6 +65,11 @@ export const TransactionsPage: FC = () => {
     return date;
   }
 
+  function dotColor(tx: Transaction): string {
+    if (tx.category_id === null) return 'var(--pfd-color-neutral)';
+    return `var(--pfd-cat-${(tx.category_id % 6) + 1})`;
+  }
+
   return (
     <Page back={false}>
       <List>
@@ -72,19 +77,21 @@ export const TransactionsPage: FC = () => {
           {loading && <Cell before={<Spinner size="s" />}>Загрузка…</Cell>}
           {error && <Cell>Ошибка: {error}</Cell>}
           {txs && txs.length === 0 && <Cell>Пусто. Добавь первую через кнопку «+ Транзакция».</Cell>}
-          {txs?.map((tx) => (
-            <Cell
-              key={tx.id}
-              subtitle={renderSubtitle(tx)}
-              after={
-                <strong>
-                  {KIND_SIGN[tx.kind]} {formatRub(tx.amount_minor)}
-                </strong>
-              }
-            >
-              {renderTitle(tx)}
-            </Cell>
-          ))}
+          {txs?.map((tx) => {
+            const k = KIND_STYLE[tx.kind];
+            return (
+              <div className="pfd-row" key={tx.id}>
+                <span className="pfd-cat-dot" style={{ background: dotColor(tx) }} />
+                <div className="pfd-row-stack">
+                  <span>{renderTitle(tx)}</span>
+                  <span className="pfd-text-meta">{renderSubtitle(tx)}</span>
+                </div>
+                <span className={`pfd-num pfd-text-emphasized ${k.cls}`}>
+                  {k.sign} {formatRub(tx.amount_minor)}
+                </span>
+              </div>
+            );
+          })}
         </Section>
       </List>
     </Page>

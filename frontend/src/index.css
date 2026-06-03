@@ -92,6 +92,22 @@ body {
   white-space: nowrap;
 }
 
+/* Two-line slot: title (default size) + meta (12px hint).
+   Use вместо .pfd-row-title когда нужен подзаголовок (дата · note и т.п.). */
+.pfd-row-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pfd-row-stack > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Hero number container ---------- */
 .pfd-hero {
   display: flex;
