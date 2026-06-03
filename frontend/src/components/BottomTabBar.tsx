@@ -29,6 +29,8 @@ function isModalPath(pathname: string): boolean {
   if (MODAL_PATHS.has(pathname)) return true;
   // /envelopes/{id} (envelope detail) — тоже modal-like.
   if (/^\/envelopes\/\d+$/.test(pathname)) return true;
+  // /plan/{id} (edit plan) — modal-like.
+  if (/^\/plan\/\d+$/.test(pathname)) return true;
   // /invites/{token}/accept (P7) — modal-like.
   if (/^\/invites\/[^/]+\/accept$/.test(pathname)) return true;
   return false;

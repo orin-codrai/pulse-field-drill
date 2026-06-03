@@ -155,7 +155,12 @@ export const PlanningPage = () => {
           {upcoming.map((p) => {
             const k = KIND_STYLE[p.kind];
             return (
-              <div className="pfd-row" key={p.id}>
+              <div
+                className="pfd-row"
+                key={p.id}
+                onClick={() => navigate(`/plan/${p.id}`)}
+                role="button"
+              >
                 <span
                   className="pfd-cat-dot"
                   style={{ background: `var(--pfd-cat-${(p.category_id % 6) + 1})` }}

@@ -6,6 +6,7 @@ import { AddSharedWorkspacePage } from '@/pages/AddSharedWorkspacePage/AddShared
 import { AddTransactionPage } from '@/pages/AddTransactionPage/AddTransactionPage';
 import { AuditHistoryPage } from '@/pages/AuditHistoryPage/AuditHistoryPage';
 import { BalancesPage } from '@/pages/BalancesPage/BalancesPage';
+import { EditPlanPage } from '@/pages/EditPlanPage/EditPlanPage';
 import { EnvelopeDetailPage } from '@/pages/EnvelopeDetailPage/EnvelopeDetailPage';
 import { EnvelopesPage } from '@/pages/EnvelopesPage/EnvelopesPage';
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage/InviteAcceptPage';
@@ -28,6 +29,7 @@ export const routes: Route[] = [
   { path: '/menu', Component: MenuPage },
   { path: '/add', Component: AddTransactionPage },
   { path: '/plan/add', Component: AddPlanPage },
+  { path: '/plan/:planId', Component: EditPlanPage },
   { path: '/envelopes', Component: EnvelopesPage },
   { path: '/envelopes/add', Component: AddEnvelopePage },
   { path: '/envelopes/:envelopeId', Component: EnvelopeDetailPage },
