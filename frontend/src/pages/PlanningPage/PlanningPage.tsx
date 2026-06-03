@@ -101,6 +101,9 @@ export const PlanningPage = () => {
                 {forecast.data.planned_expense > 0 && (
                   <> · расход <span className="pfd-num">{formatRub(forecast.data.planned_expense)}</span></>
                 )}
+                {forecast.data.planned_skim > 0 && (
+                  <> · в конверт <span className="pfd-num">{formatRub(forecast.data.planned_skim)}</span></>
+                )}
                 {forecast.data.reserved > 0 && (
                   <> · резерв <span className="pfd-num">{formatRub(forecast.data.reserved)}</span></>
                 )}

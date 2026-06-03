@@ -51,6 +51,7 @@ async def test_forecast_empty_workspace(
     assert f["reserved"] == 0
     assert f["planned_income"] == 0
     assert f["planned_expense"] == 0
+    assert f["planned_skim"] == 0
     assert f["projected_balance"] == 0
     assert f["projected_available"] == 0
 
@@ -335,3 +336,142 @@ async def test_forecast_cross_workspace_isolation(
     r = await app_client.get("/api/forecast", headers=auth_header)
     # User A forecast не видит план юзера B.
     assert r.json()["planned_expense"] == 0
+
+
+# ============================================================================
+# planned_skim (v1.1, ADR-0008) — predicted envelope auto-skim из future income
+# ============================================================================
+
+
+async def test_forecast_planned_skim_single_envelope(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Один конверт с percent → planned_skim = floor(income * pct / 100) * N.
+    projected_available -= planned_skim.
+    """
+    today = datetime.now(timezone.utc).date()
+    await app_client.post(
+        "/api/envelopes", headers=auth_header,
+        json={"name": "НЗ", "percent": 10},
+    )
+    await _create_plan(
+        app_client, auth_header,
+        kind="income", amount_minor=50000,
+        category_id=fcst_setup["income_cat"], account_id=fcst_setup["card"],
+        first_date=today.isoformat(), recurrence="once",
+    )
+    r = await app_client.get(
+        f"/api/forecast?horizon={today.isoformat()}", headers=auth_header
+    )
+    f = r.json()
+    assert f["planned_income"] == 50000
+    assert f["planned_skim"] == 5000  # floor(50000 * 10 / 100)
+    assert f["projected_balance"] == 50000  # available + income - expense
+    assert f["projected_available"] == 50000 - 0 - 5000  # − reserved − skim
+
+
+async def test_forecast_planned_skim_multiple_envelopes_floor_per_each(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Несколько конвертов: skim per envelope (зеркалит skim_on_income).
+    Σ floor по каждому ≤ income (не общий percent floor → потери на rounding'е
+    остаются у юзера на счёте)."""
+    today = datetime.now(timezone.utc).date()
+    await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "A", "percent": 10},
+    )
+    await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "B", "percent": 15},
+    )
+    await _create_plan(
+        app_client, auth_header,
+        kind="income", amount_minor=50000,
+        category_id=fcst_setup["income_cat"], account_id=fcst_setup["card"],
+        first_date=today.isoformat(), recurrence="once",
+    )
+    r = await app_client.get(
+        f"/api/forecast?horizon={today.isoformat()}", headers=auth_header
+    )
+    f = r.json()
+    # 5000 + 7500 = 12500 (per envelope floor; aggregate floor дал бы 12500 тоже,
+    # но при «грязных» суммах эти два значения расходятся — тест на 50000 не
+    # ловит расхождение, важно что зеркалит skim_on_income).
+    assert f["planned_skim"] == 12500
+    assert f["projected_available"] == 50000 - 12500
+
+
+async def test_forecast_manual_envelope_no_planned_skim(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Конверт без percent (ручной) не участвует в auto-skim → planned_skim=0."""
+    today = datetime.now(timezone.utc).date()
+    await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "Manual"},
+    )
+    await _create_plan(
+        app_client, auth_header,
+        kind="income", amount_minor=10000,
+        category_id=fcst_setup["income_cat"], account_id=fcst_setup["card"],
+        first_date=today.isoformat(), recurrence="once",
+    )
+    r = await app_client.get(
+        f"/api/forecast?horizon={today.isoformat()}", headers=auth_header
+    )
+    f = r.json()
+    assert f["planned_income"] == 10000
+    assert f["planned_skim"] == 0
+    assert f["projected_available"] == 10000
+
+
+async def test_forecast_planned_skim_multiple_occurrences(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Monthly план × percent: skim умножается на N вхождений в окне."""
+    from dateutil.relativedelta import relativedelta
+    today = datetime.now(timezone.utc).date()
+    await app_client.post(
+        "/api/envelopes", headers=auth_header, json={"name": "X", "percent": 20},
+    )
+    await _create_plan(
+        app_client, auth_header,
+        kind="income", amount_minor=30000,
+        category_id=fcst_setup["income_cat"], account_id=fcst_setup["card"],
+        first_date=today.isoformat(), recurrence="month",
+    )
+    # Horizon = today + 2 месяца → 3 вхождения (today, +1mo, +2mo).
+    h = today + relativedelta(months=2)
+    r = await app_client.get(
+        f"/api/forecast?horizon={h.isoformat()}", headers=auth_header
+    )
+    f = r.json()
+    assert f["planned_income"] == 30000 * 3
+    assert f["planned_skim"] == (30000 * 20 // 100) * 3  # 6000 * 3 = 18000
+
+
+async def test_forecast_archived_envelope_excluded_from_planned_skim(
+    app_client: AsyncClient, auth_header, fcst_setup
+):
+    """Archived envelope не участвует в predicted skim (зеркалит skim_on_income,
+    который тоже фильтрует архивные через archived_at IS NULL)."""
+    today = datetime.now(timezone.utc).date()
+    e = await app_client.post(
+        "/api/envelopes", headers=auth_header,
+        json={"name": "Archived", "percent": 25},
+    )
+    eid = e.json()["id"]
+    await app_client.patch(
+        f"/api/envelopes/{eid}", headers=auth_header,
+        json={"archived_at": "2026-06-01T00:00:00Z"},
+    )
+    await _create_plan(
+        app_client, auth_header,
+        kind="income", amount_minor=10000,
+        category_id=fcst_setup["income_cat"], account_id=fcst_setup["card"],
+        first_date=today.isoformat(), recurrence="once",
+    )
+    r = await app_client.get(
+        f"/api/forecast?horizon={today.isoformat()}", headers=auth_header
+    )
+    f = r.json()
+    assert f["planned_skim"] == 0
+    assert f["projected_available"] == 10000

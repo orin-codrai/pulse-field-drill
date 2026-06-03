@@ -1,30 +1,33 @@
 """Прогноз баланса на горизонте.
 
-Формула (ADR-0008):
+Формула (ADR-0008, v1.1):
 
     available_now       = Σ балансы счетов workspace                   (event-sourced)
-    reserved            = Σ reserved активных конвертов                (0 до Phase 6)
+    reserved            = Σ reserved активных конвертов                (Σ entries)
     planned_income      = Σ planned(kind=income,  status='planned'),
                             вхождения в [today, horizon]
     planned_expense     = Σ planned(kind=expense, status='planned'),
                             вхождения в [today, horizon]
+    planned_skim        = Σ per occurrence per envelope:
+                            floor(plan.amount_minor * envelope.percent / 100)
+                          (только income-плана × active envelope.percent NOT NULL)
     projected_balance   = available_now + planned_income − planned_expense
-    projected_available = projected_balance − reserved
+    projected_available = projected_balance − reserved − planned_skim
 
 Окно `[today, horizon]` (inclusive с обоих концов через
 `occurrences_in_window(inclusive_start=True)`) — критично, иначе сегодняшнее
 обязательство не отражено ни в available_now (tx ещё нет), ни в planned_*
 → projected_balance ложно высок и юзер пере-тратит (MF8-3).
 
-Просроченные циклы (overdue, scheduled < today, не confirmed) в planned_*
-НЕ считаются — по дизайну (C9-3). Юзер catch-up'ит через `/api/planned/due`
-(он показывает первое неподтверждённое каждого плана). Аргумент против их
-включения: они оставались бы в planned_expense после confirm'a (tx уйдёт
-в available_now, но scheduled-дата уже в прошлом → следующая итерация
-forecast'a продолжит считать). Без чистой формулы → backlog.
+`planned_skim` зеркалит `skim_on_income` (ADR-0007): per-occurrence per-envelope
+floor — Σ скимов ≤ planned_income. Чистый доп-вычет, не рекурсия: planned_income
+остаётся «грязным» (доход на счёт), planned_skim переносит долю в reserved
+концептуально → projected_available «после скима».
 
-MAX_HORIZON_MONTHS=13 clamp — защита от раздувания weekly без total_cycles
-(неограниченный план даёт неограниченное число вхождений в большом окне).
+Просроченные циклы (overdue, scheduled < today, не confirmed) в planned_*
+НЕ считаются — по дизайну (C9-3). Юзер catch-up'ит через `/api/planned/due`.
+
+MAX_HORIZON_MONTHS=13 clamp — защита от раздувания weekly без total_cycles.
 """
 
 from calendar import monthrange
@@ -60,6 +63,7 @@ class Forecast:
     reserved: int
     planned_income: int
     planned_expense: int
+    planned_skim: int
     projected_balance: int
     projected_available: int
     horizon: date
@@ -94,8 +98,19 @@ async def compute_forecast(
     )
     reserved = int(reserved_raw)
 
+    # Active envelopes с percent (NOT NULL) — те же, что попадут в skim_on_income
+    # при confirm каждого income-вхождения. Запрос один раз перед циклом.
+    envelope_pcts: list[int] = list((await session.execute(
+        select(Envelope.percent).where(
+            Envelope.workspace_id == workspace_id,
+            Envelope.archived_at.is_(None),
+            Envelope.percent.is_not(None),
+        )
+    )).scalars().all())
+
     planned_income = 0
     planned_expense = 0
+    planned_skim = 0
     if h >= today:
         plans = (await session.execute(
             select(PlannedOperation).where(
@@ -109,19 +124,27 @@ async def compute_forecast(
             # в planned_*. Иначе сегодняшнее обязательство не отражено и
             # projected_balance ложно высок.
             occs = occurrences_in_window(plan, today, h)
-            total = plan.amount_minor * len(occs)
+            n = len(occs)
+            total = plan.amount_minor * n
             if plan.kind == "income":
                 planned_income += total
+                # Зеркалит skim_on_income: per-envelope floor per occurrence.
+                # Σ floor никогда не превысит сам amount → planned_skim ≤ total.
+                per_occ_skim = sum(
+                    (plan.amount_minor * pct) // 100 for pct in envelope_pcts
+                )
+                planned_skim += per_occ_skim * n
             else:
                 planned_expense += total
 
     projected_balance = available_now + planned_income - planned_expense
-    projected_available = projected_balance - reserved
+    projected_available = projected_balance - reserved - planned_skim
     return Forecast(
         available_now=available_now,
         reserved=reserved,
         planned_income=planned_income,
         planned_expense=planned_expense,
+        planned_skim=planned_skim,
         projected_balance=projected_balance,
         projected_available=projected_available,
         horizon=h,

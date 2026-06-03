@@ -68,11 +68,14 @@ default). `total_cycles IS NULL` = бесконечно → `remaining_cycles` �
 **Формула прогноза** (`GET /api/forecast?horizon=`, default — конец текущего месяца):
 ```
 available_now       = Σ балансы счетов workspace               (event-sourced, ADR-0004)
-reserved            = Σ reserved активных конвертов            (ADR-0007)
+reserved            = Σ reserved активных конвертов            (ADR-0007, Σ entries)
 planned_income      = Σ planned(kind=income,  status='planned'), вхождения в (today, horizon]
 planned_expense     = Σ planned(kind=expense, status='planned'), вхождения в (today, horizon]
+planned_skim        = Σ per occurrence per envelope:
+                        floor(plan.amount_minor * envelope.percent / 100)
+                      (только income-плана × active envelope.percent NOT NULL, v1.1)
 projected_balance   = available_now + planned_income − planned_expense
-projected_available = projected_balance − reserved             ← заголовок
+projected_available = projected_balance − reserved − planned_skim   ← заголовок
 ```
 
 Пины:
@@ -85,8 +88,13 @@ projected_available = projected_balance − reserved             ← загол�
   weekly-плане); за пределами — caller-trusted, соло-юзер.
 - Считаем **только `status='planned'`**. Подтверждённый план уже стал транзакцией →
   в `available_now`; учёт в planned_* = двойной счёт.
-- **v1-упрощение:** будущие скимы конвертов из *запланированного* дохода НЕ моделируем
-  (иначе рекурсия prognoz↔skim). `reserved` = текущий баланс конвертов.
+- **v1.1:** `planned_skim` зеркалит `skim_on_income` (ADR-0007) — per-occurrence
+  per-envelope floor. Прежнее v1-упрощение «не моделируем future skim» создавало gap:
+  юзер видел planned_income полностью в available, после confirm'a реально получал
+  меньше на сумму скима. Рекурсии prognoz↔skim нет — это чистый доп-вычет; planned_income
+  остаётся «грязным» (доход на счёт), planned_skim переносит долю в reserved концептуально
+  → projected_available «после скима». Сходимость: Σ floor по конвертам ≤ amount, т.е.
+  planned_skim ≤ planned_income; predicted_reserved (existing+future) не считается отдельно.
 - **Психология (UI, не формула):** `projected_available > 0` → «Излишек N — в конверт?»;
   `<= 0` → мягкая подача, не красный приговор. Формула честная, переобрамляет presentation.
 - Прогноз «по средним за прошлые месяцы» (типовые траты) — упрощённо/опционально для v1.

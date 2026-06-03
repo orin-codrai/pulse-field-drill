@@ -10,6 +10,7 @@ class ForecastOut(BaseModel):
     reserved: int
     planned_income: int
     planned_expense: int
+    planned_skim: int
     projected_balance: int
     projected_available: int
     horizon: date
