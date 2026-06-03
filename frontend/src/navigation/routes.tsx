@@ -10,6 +10,7 @@ import { EnvelopeDetailPage } from '@/pages/EnvelopeDetailPage/EnvelopeDetailPag
 import { EnvelopesPage } from '@/pages/EnvelopesPage/EnvelopesPage';
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage/InviteAcceptPage';
 import { MenuPage } from '@/pages/MenuPage/MenuPage';
+import { PinSetupPage } from '@/pages/PinSetupPage/PinSetupPage';
 import { PlanningPage } from '@/pages/PlanningPage/PlanningPage';
 import { RegistrationPage } from '@/pages/RegistrationPage/RegistrationPage';
 import { RestorePage } from '@/pages/RestorePage/RestorePage';
@@ -36,4 +37,6 @@ export const routes: Route[] = [
   { path: '/invites/:token/accept', Component: InviteAcceptPage },
   { path: '/workspaces/new', Component: AddSharedWorkspacePage },
   { path: '/audit', Component: AuditHistoryPage },
+  // PIN setup/change (Phase 8 + 1).
+  { path: '/pin/setup', Component: PinSetupPage },
 ];

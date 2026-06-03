@@ -22,6 +22,7 @@ const MODAL_PATHS = new Set([
   '/restore',
   '/workspaces/new',
   '/audit',
+  '/pin/setup',
 ]);
 
 function isModalPath(pathname: string): boolean {

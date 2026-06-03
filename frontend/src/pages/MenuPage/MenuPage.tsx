@@ -1,14 +1,16 @@
 import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
-import { Mail } from 'lucide-react';
+import { Lock, Mail } from 'lucide-react';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Page } from '@/components/Page.tsx';
 import { useMe } from '@/hooks/useMe';
+import { usePin } from '@/hooks/usePin';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { ApiError, apiPatch, apiPost } from '@/lib/api';
+import { clearPin } from '@/lib/pin';
 import { bump } from '@/lib/refetch';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME ?? 'pulse_drill_bot';
@@ -22,7 +24,15 @@ export const MenuPage: FC = () => {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const { hasPin } = usePin();
+
   const activeWs = workspaces?.find((w) => w.id === user?.active_workspace_id);
+
+  function removePin() {
+    if (confirm('Удалить PIN-код? Приложение перестанет требовать его при входе.')) {
+      clearPin();
+    }
+  }
 
   async function switchTo(workspaceId: number) {
     if (switching || !raw || workspaceId === user?.active_workspace_id) return;
@@ -118,6 +128,18 @@ export const MenuPage: FC = () => {
           >
             Конверты
           </Cell>
+          <Cell
+            before={<Lock size={20} className="pfd-text-neutral" />}
+            onClick={() => navigate(hasPin ? '/pin/setup?mode=change' : '/pin/setup')}
+            subtitle={hasPin ? 'Сменить код' : 'Запрашивать при входе'}
+          >
+            PIN-код
+          </Cell>
+          {hasPin && (
+            <Cell onClick={removePin}>
+              <span className="pfd-text-danger">Удалить PIN-код</span>
+            </Cell>
+          )}
           <Cell onClick={softDelete}>
             <span className="pfd-text-danger">Удалить аккаунт</span>
           </Cell>
