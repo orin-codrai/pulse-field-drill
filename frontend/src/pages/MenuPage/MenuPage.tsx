@@ -1,5 +1,6 @@
 import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui';
 import { initData, useSignal } from '@tma.js/sdk-react';
+import { Mail } from 'lucide-react';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -100,8 +101,10 @@ export const MenuPage: FC = () => {
           <Section header="Совместный" footer={inviteUrl ? 'Ссылка скопирована в буфер обмена.' : 'Пригласи партнёра по ссылке.'}>
             <Cell onClick={createInvite}>+ Пригласить</Cell>
             {inviteUrl && (
-              <Cell multiline style={{ wordBreak: 'break-all', fontSize: 13 }}>
-                {inviteUrl}
+              <Cell multiline>
+                <span className="pfd-text-meta" style={{ wordBreak: 'break-all' }}>
+                  {inviteUrl}
+                </span>
               </Cell>
             )}
             <Cell onClick={() => navigate('/audit')}>История изменений</Cell>
@@ -110,24 +113,19 @@ export const MenuPage: FC = () => {
 
         <Section header="Управление">
           <Cell
-            before={<span style={{ fontSize: 22 }}>✉️</span>}
+            before={<Mail size={20} className="pfd-text-neutral" />}
             onClick={() => navigate('/envelopes')}
           >
             Конверты
           </Cell>
-          <Cell
-            onClick={softDelete}
-            style={{ color: 'var(--tg-theme-destructive-text-color, #e53935)' }}
-          >
-            Удалить аккаунт
+          <Cell onClick={softDelete}>
+            <span className="pfd-text-danger">Удалить аккаунт</span>
           </Cell>
         </Section>
 
         {error && (
           <Section>
-            <Cell style={{ color: 'var(--tg-theme-destructive-text-color, red)' }}>
-              {error}
-            </Cell>
+            <Cell><span className="pfd-text-danger">{error}</span></Cell>
           </Section>
         )}
       </List>
